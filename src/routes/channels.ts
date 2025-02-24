@@ -1,5 +1,5 @@
 import { NonThreadGuildBasedChannel } from "discord.js";
-import { eq } from "drizzle-orm";
+import { and, eq, ilike } from "drizzle-orm";
 import {
     FastifyInstance,
     FastifyPluginAsync,
@@ -16,7 +16,7 @@ import {
     ApiResponseSchema,
     ErrorResponseSchema,
 } from "../types/api";
-import { wrappedHandler } from "./utils";
+import { wrappedHandler, wrappedParse } from "./utils";
 
 const AddChannelToAllowlistRequestSchema = z.object({
     id: z.string().min(1, "Channel id is required"),
@@ -52,6 +52,15 @@ const SyncChannelsResponseSchema = z.object({
 const GuildChannelResponseSchema = z.custom<NonThreadGuildBasedChannel>();
 
 type GuildChannelResponse = z.infer<typeof GuildChannelResponseSchema>;
+
+const ListChannelsRequestQuerySchema = z
+    .object({
+        name: z.string().optional(),
+    })
+    .transform((data) => ({
+        ...data,
+        name: data.name?.toLowerCase().trim(),
+    }));
 
 const getGuildChannels = async (
     fastify: FastifyInstance
@@ -151,6 +160,45 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
             data: {
                 newChannelCount,
             },
+        };
+    },
+
+    listChannels: async (
+        request: FastifyRequest,
+        reply: FastifyReply
+    ): Promise<ApiResponse<z.infer<typeof ChannelsResponseSchema>>> => {
+        const { db } = fastify.dependencies;
+
+        const { name } = wrappedParse(
+            ListChannelsRequestQuerySchema,
+            request.query,
+            "list_channels::query_params"
+        );
+
+        const whereConditions = [];
+        if (name) {
+            whereConditions.push(ilike(channelsSchema.name, `%${name}%`));
+        }
+
+        const whereClause =
+            whereConditions.length > 0 ? and(...whereConditions) : undefined;
+
+        const channels = await db
+            .select({
+                channelId: channelsSchema.channelId,
+                name: channelsSchema.name,
+                isPublic: channelsSchema.isPublic,
+                allowed: channelsSchema.allowed,
+                type: channelsSchema.type,
+                updatedAt: channelsSchema.updatedAt,
+            })
+            .from(channelsSchema)
+            .where(whereClause)
+            .orderBy(channelsSchema.name);
+
+        return {
+            status: 200,
+            data: channels,
         };
     },
 
@@ -295,6 +343,17 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
  */
 export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     const handlers = createChannelHandlers(fastify);
+
+    // GET /channels
+    fastify.get("/channels", {
+        schema: {
+            response: {
+                201: ApiResponseSchema(ChannelsResponseSchema),
+                400: ErrorResponseSchema,
+            },
+        },
+        handler: wrappedHandler(fastify)(handlers.listChannels),
+    });
 
     // GET /channels/allowed
     fastify.get("/channels/allowed", {
