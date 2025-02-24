@@ -3,8 +3,8 @@ config();
 
 import { drizzle } from "drizzle-orm/node-postgres";
 import { FastifyBaseLogger } from "fastify";
-import { Client } from "pg";
-import { EnvConfig, isDevelopment } from "./env";
+import { Pool } from "pg";
+import { isDevelopment } from "./env";
 import { channels } from "./schema/channels";
 import {
     textBasedChannelCheckpointer,
@@ -12,11 +12,11 @@ import {
 } from "./schema/checkpointer";
 import { messages } from "./schema/messages";
 
-const client = new Client({
-    connectionString: EnvConfig.DATABASE_URL,
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
 });
 
-const db = drizzle(client, {
+const db = drizzle(pool, {
     schema: {
         channels,
         messages,
@@ -37,12 +37,12 @@ export const connectDB = async (opts?: { logger?: FastifyBaseLogger }) => {
 
     try {
         isConnecting = true;
-        await client.connect();
+        await pool.connect();
         retryCount = 0;
         opts?.logger?.info?.("Database connected ✅");
 
         // Add error handler for the database connection
-        client.on("error", async (err) => {
+        pool.on("error", async (err) => {
             opts?.logger?.error?.(err, "Database connection error");
 
             // Try to reconnect if the connection is terminated
@@ -71,10 +71,10 @@ export const connectDB = async (opts?: { logger?: FastifyBaseLogger }) => {
 
 export const disconnectDB = async (opts?: { logger?: FastifyBaseLogger }) => {
     try {
-        await client.end();
+        await pool.end();
     } catch (err) {
         opts?.logger?.error(err, "Error disconnecting from database");
     }
 };
 
-export { client, db };
+export { pool as client, db };
