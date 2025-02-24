@@ -5,12 +5,17 @@ import {
     TextBasedChannel,
 } from "discord.js";
 import { and, count, desc, eq, gt, lt } from "drizzle-orm";
-import { FastifyInstance, FastifyPluginAsync, FastifyRequest } from "fastify";
-import { ZodTypeProvider } from "fastify-type-provider-zod";
+import {
+    FastifyInstance,
+    FastifyPluginAsync,
+    FastifyReply,
+    FastifyRequest,
+} from "fastify";
 import { z } from "zod";
 
 import { fetchHistoricalMessages } from "../lib/discord/historical/text-channel";
 import { fetchHistoricalThreadBasedMessages } from "../lib/discord/historical/thread-channel";
+import { validateApiKey } from "../middleware/auth";
 import { channels as channelsSchema } from "../schema/channels";
 import {
     textBasedChannelCheckpointer as textBasedChannelCheckpointerSchema,
@@ -128,7 +133,8 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
     // },
 
     backfillMessages: async (
-        request: FastifyRequest
+        request: FastifyRequest,
+        reply: FastifyReply
     ): Promise<ApiResponse<{ processed: number }>> => {
         const { discordClient, db } = fastify.dependencies;
         const { channelId, threadId, before, maxRetries } = wrappedParse(
@@ -233,7 +239,8 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
     },
 
     getMessages: async (
-        request: FastifyRequest
+        request: FastifyRequest,
+        reply: FastifyReply
     ): Promise<ApiResponse<z.infer<typeof MessagesResponseSchema>>> => {
         const { db } = fastify.dependencies;
         const { channelId } = wrappedParse(
@@ -286,6 +293,39 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
             },
         };
     },
+
+    sampleMessages: async (
+        request: FastifyRequest,
+        reply: FastifyReply
+    ): Promise<ApiResponse<any>> => {
+        const { channelId } = wrappedParse(
+            GetMessagesRequestParamsSchema,
+            request.params,
+            "get_messages::path_params"
+        );
+
+        const channel =
+            await fastify.dependencies.discordClient?.channels.fetch(channelId);
+        if (!channel) {
+            throw new Error("Channel not found");
+        }
+
+        if (!channel || !channel.isTextBased()) {
+            throw new Error("Channel not found or is not text-based");
+        }
+
+        const messages = await channel.messages.fetch({ limit: 100 });
+
+        fastify.log.info(messages.size);
+        fastify.log.info(messages);
+
+        return {
+            status: 200,
+            data: {
+                messages,
+            },
+        };
+    },
 });
 
 /**
@@ -297,33 +337,62 @@ export const messagesRoutes: FastifyPluginAsync = async (fastify) => {
     // initialize message listener when routes are registered
     // await handlers.setupMessageListener();
 
-    fastify.withTypeProvider<ZodTypeProvider>().post(
-        "/messages/backfill",
-        {
-            schema: {
-                body: BackfillMessagesRequestSchema,
-                response: {
-                    200: z.object({ processed: z.number() }),
-                    400: z.object({ error: z.string() }),
+    fastify.post("/messages/backfill", {
+        preHandler: validateApiKey,
+        schema: {
+            body: BackfillMessagesRequestSchema,
+            response: {
+                200: z.object({ processed: z.number() }),
+                400: z.object({ error: z.string() }),
+            },
+            headers: {
+                type: "object",
+                required: ["x-api-key"],
+                properties: {
+                    "x-api-key": { type: "string" },
                 },
             },
         },
-        wrappedHandler(fastify)(handlers.backfillMessages)
-    );
+        handler: wrappedHandler(fastify)(handlers.backfillMessages),
+    });
 
     // GET /messages/:channelId
-    fastify.withTypeProvider<ZodTypeProvider>().get(
-        "/messages/:channelId",
-        {
-            schema: {
-                params: GetMessagesRequestParamsSchema,
-                querystring: GetMessagesRequestQuerySchema,
-                response: {
-                    200: MessagesResponseSchema,
-                    404: z.object({ error: z.string() }),
+    fastify.get("/messages/:channelId", {
+        schema: {
+            params: GetMessagesRequestParamsSchema,
+            querystring: GetMessagesRequestQuerySchema,
+            response: {
+                200: MessagesResponseSchema,
+                404: z.object({ error: z.string() }),
+            },
+            headers: {
+                type: "object",
+                required: ["x-api-key"],
+                properties: {
+                    "x-api-key": { type: "string" },
                 },
             },
         },
-        wrappedHandler(fastify)(handlers.getMessages)
-    );
+        handler: wrappedHandler(fastify)(handlers.getMessages),
+    });
+
+    // GET /messages/:channelId/sample
+    fastify.get("/messages/:channelId/sample", {
+        schema: {
+            params: GetMessagesRequestParamsSchema,
+            querystring: GetMessagesRequestQuerySchema,
+            response: {
+                200: z.any(),
+                404: z.object({ error: z.string() }),
+            },
+            headers: {
+                type: "object",
+                required: ["x-api-key"],
+                properties: {
+                    "x-api-key": { type: "string" },
+                },
+            },
+        },
+        handler: wrappedHandler(fastify)(handlers.sampleMessages),
+    });
 };

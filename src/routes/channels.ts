@@ -9,6 +9,7 @@ import {
 import { z } from "zod";
 
 import { isPublicChannel } from "../lib/discord/utils";
+import { validateApiKey } from "../middleware/auth";
 import { channels as channelsSchema } from "../schema/channels";
 import {
     ApiResponse,
@@ -57,7 +58,7 @@ const getGuildChannels = async (
 ): Promise<(NonThreadGuildBasedChannel & { is_public: boolean })[]> => {
     try {
         const guild = fastify.dependencies.discordClient?.guilds.cache.first();
-        console.log("guild", guild?.id);
+        fastify.log.info("guild", guild?.id);
 
         if (!guild) {
             throw { statusCode: 400, message: "Bot is not in any guilds" };
@@ -77,23 +78,16 @@ const getGuildChannels = async (
                 is_public: isPublicChannel(channel, guild),
             })) as (NonThreadGuildBasedChannel & { is_public: boolean })[];
     } catch (error) {
-        console.error("Error fetching guild channels", error);
+        fastify.log.error(error, "Error fetching guild channels");
         throw error;
     }
 };
 
 const createChannelHandlers = (fastify: FastifyInstance) => ({
-    listChannels: async (): Promise<
-        ApiResponse<z.infer<typeof ChannelsResponseSchema>>
-    > => {
-        console.log("listChannels", fastify.dependencies);
-        return {
-            status: 200,
-            data: [],
-        };
-    },
-
-    listGuildChannels: async (): Promise<
+    listGuildChannels: async (
+        request: FastifyRequest,
+        reply: FastifyReply
+    ): Promise<
         ApiResponse<(GuildChannelResponse & { is_public: boolean })[]>
     > => {
         const channels = await getGuildChannels(fastify);
@@ -104,20 +98,21 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
         };
     },
 
-    syncChannels: async (): Promise<
-        ApiResponse<z.infer<typeof SyncChannelsResponseSchema>>
-    > => {
+    syncChannels: async (
+        request: FastifyRequest,
+        reply: FastifyReply
+    ): Promise<ApiResponse<z.infer<typeof SyncChannelsResponseSchema>>> => {
         const { db } = fastify.dependencies;
-        console.log("starting sync channels");
+        fastify.log.info("starting sync channels");
         const guildChannels = await getGuildChannels(fastify);
-        console.log("got guild channels", guildChannels.length);
+        fastify.log.info("got guild channels", guildChannels.length);
         const dbChannels = await db
             .select({
                 channelId: channelsSchema.channelId,
             })
             .from(channelsSchema)
             .orderBy(channelsSchema.name);
-        console.log("select existing channels", dbChannels.length);
+        fastify.log.info("select existing channels", dbChannels.length);
 
         const newChannels = guildChannels.filter(
             (channel) =>
@@ -125,7 +120,7 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
                     (dbChannel) => dbChannel.channelId === channel.id
                 )
         );
-        console.log("new channels", newChannels.length);
+        fastify.log.info("new channels", newChannels.length);
 
         let newChannelCount = 0;
         try {
@@ -145,9 +140,9 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
                 .returning();
 
             newChannelCount = newDbChannels.length;
-            console.log("inserted channels", newDbChannels.length);
+            fastify.log.info("inserted channels", newDbChannels.length);
         } catch (error) {
-            console.error("Error inserting channels", error);
+            fastify.log.error(error, "Error inserting channels");
             throw error;
         }
 
@@ -159,9 +154,10 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
         };
     },
 
-    listAllowedChannels: async (): Promise<
-        ApiResponse<z.infer<typeof ChannelsResponseSchema>>
-    > => {
+    listAllowedChannels: async (
+        request: FastifyRequest,
+        reply: FastifyReply
+    ): Promise<ApiResponse<z.infer<typeof ChannelsResponseSchema>>> => {
         const { db } = fastify.dependencies;
 
         const channels = await db
@@ -186,18 +182,15 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
         request: FastifyRequest,
         reply: FastifyReply
     ): Promise<ApiResponse<z.infer<typeof ChannelResponseSchema>>> => {
-        const body = request.body as AddChannelToAllowlistRequest;
-        console.log("request.body", request.body);
-
-        const { id } = body;
+        const { id } = request.body as AddChannelToAllowlistRequest;
         const { db, discordClient } = fastify.dependencies;
 
-        console.log("trying to match channel id", id);
+        fastify.log.info("trying to match channel id", id);
 
         const channel = await db.query.channels.findFirst({
             where: eq(channelsSchema.channelId, id),
         });
-        console.log("channel", channel);
+        fastify.log.info("channel", channel);
 
         if (!channel) {
             return {
@@ -270,9 +263,11 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
     },
 
     removeChannelFromAllowlist: async (
-        body: RemoveChannelFromAllowlistRequest
+        request: FastifyRequest,
+        reply: FastifyReply
     ): Promise<ApiResponse<{ message: string }>> => {
-        const { id } = body;
+        const { id } = request.body as RemoveChannelFromAllowlistRequest;
+
         const { db } = fastify.dependencies;
 
         try {
@@ -300,17 +295,6 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
 export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     const handlers = createChannelHandlers(fastify);
 
-    // GET /channels
-    fastify.get("/channels", {
-        schema: {
-            response: {
-                201: ApiResponseSchema(ChannelsResponseSchema),
-                400: ErrorResponseSchema,
-            },
-        },
-        handler: wrappedHandler(fastify)(handlers.listChannels),
-    });
-
     // GET /channels/allowed
     fastify.get("/channels/allowed", {
         schema: {
@@ -323,24 +307,20 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     });
 
     // GET /channels/guild
-    fastify.get(
-        "/channels/guild",
-        {
-            schema: {
-                response: {
-                    201: ApiResponseSchema(ChannelsResponseSchema),
-                    400: ErrorResponseSchema,
-                },
+    fastify.get("/channels/guild", {
+        preHandler: validateApiKey,
+        schema: {
+            response: {
+                201: ApiResponseSchema(ChannelsResponseSchema),
+                400: ErrorResponseSchema,
             },
         },
-        async (req, res) => {
-            console.log("dependencies", fastify.dependencies);
-            return handlers.listGuildChannels();
-        }
-    );
+        handler: wrappedHandler(fastify)(handlers.listGuildChannels),
+    });
 
     // POST /channels/sync
     fastify.post("/channels/sync", {
+        preHandler: validateApiKey,
         schema: {
             response: {
                 201: ApiResponseSchema(ChannelResponseSchema),
@@ -354,6 +334,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
 
     // POST /channels/allowed
     fastify.post("/channels/allowed", {
+        preHandler: validateApiKey,
         schema: {
             body: AddChannelToAllowlistRequestSchema,
             response: {
@@ -368,6 +349,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
 
     // DELETE /channels/allowed
     fastify.delete("/channels/allowed", {
+        preHandler: validateApiKey,
         schema: {
             body: RemoveChannelFromAllowlistRequestSchema,
             response: {
