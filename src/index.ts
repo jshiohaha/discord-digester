@@ -2,7 +2,6 @@ import { config } from "dotenv";
 
 config();
 
-// import { Client, GatewayIntentBits } from "discord.js";
 import { Client, GatewayIntentBits } from "discord.js";
 import Fastify from "fastify";
 import {
@@ -12,7 +11,7 @@ import {
 } from "fastify-type-provider-zod";
 import { z } from "zod";
 
-import { client, db } from "./db";
+import { client, connectDB, db, disconnectDB } from "./db";
 import { EnvConfig } from "./env";
 import { channelRoutes } from "./routes/channels";
 import { messagesRoutes } from "./routes/messages";
@@ -127,18 +126,15 @@ const start = async () => {
                 ],
             });
 
+            discordClient.on("error", (error) => {
+                fastify.log.error(error, "Discord client error");
+            });
+
             await discordClient.login(EnvConfig.DISCORD_BOT_TOKEN).then(() => {
                 fastify.log.info("Discord client initialized ✅");
             });
 
-            await client
-                .connect()
-                .then(() => {
-                    fastify.log.info("Database connected ✅");
-                })
-                .catch((err) => {
-                    fastify.log.error("Database connection failed ❌", err);
-                });
+            await connectDB({ logger: fastify.log });
 
             fastify.decorate("dependencies", {
                 db,
@@ -176,10 +172,15 @@ const start = async () => {
         const shutdown = async (signal: string) => {
             fastify.log.info(`Received ${signal}, closing server...`);
 
-            await fastify.close();
-            await fastify.dependencies.client.end();
-            await fastify.dependencies.discordClient?.destroy();
-            process.exit(0);
+            try {
+                await fastify.close();
+                await disconnectDB();
+                await fastify.dependencies.discordClient?.destroy();
+                process.exit(0);
+            } catch (err) {
+                fastify.log.error(err, "Error during shutdown");
+                process.exit(1);
+            }
         };
 
         process.on("SIGINT", shutdown);
