@@ -29,7 +29,7 @@ Today, conversations and context is locked away in Discord. Channels are public,
 
 # Solution
 
-Discord Digester is a tool that allows you to digest and analyze Discord messages.
+Discord Digester is a tool that extracts, stores, and makes Discord content easily accessible and analyzable. It systematically captures messages from specific channels and allows you to easily query them.
 
 ### Features
 
