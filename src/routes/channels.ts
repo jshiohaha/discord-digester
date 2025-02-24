@@ -170,6 +170,7 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
                 updatedAt: channelsSchema.updatedAt,
             })
             .from(channelsSchema)
+            .where(eq(channelsSchema.allowed, true))
             .orderBy(channelsSchema.name);
 
         return {
