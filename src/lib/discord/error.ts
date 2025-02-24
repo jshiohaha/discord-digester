@@ -1,5 +1,5 @@
 import { RateLimitError } from "discord.js";
-import { Logger } from "pino";
+import { FastifyBaseLogger } from "fastify";
 
 import { Nullish } from "../../types/index";
 
@@ -13,14 +13,16 @@ export const handleRateLimitError = async (
     maxRetries: number,
     opts?: {
         descriptor: string;
-        logger?: Nullish<Logger>;
+        logger?: Nullish<FastifyBaseLogger>;
     }
 ): Promise<RateLimitResult | undefined> => {
     if (error instanceof RateLimitError) {
         if (retries < maxRetries) {
             const retryAfter = error.retryAfter;
             opts?.logger?.warn(
-                `Rate limit exceeded while ${opts?.descriptor}, retrying in ${retryAfter}ms (Retry ${
+                `Rate limit exceeded while ${
+                    opts?.descriptor
+                }, retrying in ${retryAfter}ms (Retry ${
                     retries + 1
                 }/${maxRetries}).`
             );

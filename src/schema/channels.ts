@@ -9,7 +9,7 @@ import {
 
 export const channels = pgTable("channels", {
     id: serial("id").primaryKey(),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
     channelId: varchar("channel_id", { length: 64 }).unique().notNull(),
     name: text("name").notNull(),
     isPublic: boolean("is_public").notNull(),

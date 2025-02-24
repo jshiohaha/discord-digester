@@ -37,7 +37,7 @@ type RemoveChannelFromAllowlistRequest = z.infer<
 const ChannelResponseSchema = z.object({
     channelId: z.string(),
     name: z.string(),
-    createdAt: z.date(),
+    updatedAt: z.date(),
     isPublic: z.boolean(),
     allowed: z.boolean(),
     type: z.string(),
@@ -167,7 +167,7 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
                 isPublic: channelsSchema.isPublic,
                 allowed: channelsSchema.allowed,
                 type: channelsSchema.type,
-                createdAt: channelsSchema.createdAt,
+                updatedAt: channelsSchema.updatedAt,
             })
             .from(channelsSchema)
             .orderBy(channelsSchema.name);

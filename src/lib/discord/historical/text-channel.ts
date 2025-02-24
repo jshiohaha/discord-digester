@@ -7,9 +7,9 @@ import {
 import { eq } from "drizzle-orm";
 import { DateTime } from "luxon";
 import pRetry from "p-retry";
-import { Logger } from "pino";
 import { z } from "zod";
 
+import { FastifyBaseLogger } from "fastify";
 import { db } from "../../../db";
 import { wrappedParse } from "../../../routes/utils";
 import { textBasedChannelCheckpointer as textBasedChannelCheckpointerSchema } from "../../../schema/checkpointer";
@@ -74,7 +74,7 @@ const FetchHistoricalMessagesArgsSchema = z.object({
             "perRequestFetchLimit should not exceed 100 as per Discord API limits"
         )
         .optional(),
-    logger: z.custom<Logger>().nullish(),
+    logger: z.custom<FastifyBaseLogger>().nullish(),
 });
 
 type FetchHistoricalMessagesArgs = z.infer<
@@ -171,24 +171,19 @@ export const fetchHistoricalMessages = async (
 
 const handleMessages = async (
     messages: Collection<string, Message>,
-    opts?: { logger?: Nullish<Logger> }
+    opts?: { logger?: Nullish<FastifyBaseLogger> }
 ) => {
     const values = messages.map((message) => ({
         messageId: message.id,
+        guildId: message.guildId,
         channelId: message.channelId,
         createdAt: message.createdAt,
-        content: message.content,
+        content: message.cleanContent,
+        threadId: message.thread?.id ?? null,
+        threadParentChannelId: message.thread?.parentId ?? null,
         replyTo: message.reference?.messageId,
-        // thread
-        threadId: message.thread?.id,
-        threadParentChannelId: message.thread?.parentId,
-        threadName: message.thread?.name,
-        // author
-        authorId: message.author.id,
-        authorUsername: message.author.username,
-        authorAvatarUrl: message.author.displayAvatarURL(),
-        authorIsBot: message.author.bot,
-        authorIsSystem: message.author.system,
+        author: message.author.toJSON(),
+        raw: message.toJSON(),
     }));
 
     if (values.length > 0) {
@@ -206,7 +201,7 @@ const handleMessages = async (
 
 const handleMessagesWithRetry = async (
     messages: Collection<string, Message>,
-    opts?: { logger?: Nullish<Logger>; batchInsertRetries?: number }
+    opts?: { logger?: Nullish<FastifyBaseLogger>; batchInsertRetries?: number }
 ) => {
     await pRetry(async () => handleMessages(messages, opts), {
         retries: opts?.batchInsertRetries ?? 3,

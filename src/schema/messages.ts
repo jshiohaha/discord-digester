@@ -1,7 +1,6 @@
-import { relations } from "drizzle-orm";
 import {
-    boolean,
     index,
+    jsonb,
     pgTable,
     serial,
     text,
@@ -12,21 +11,18 @@ export const messages = pgTable(
     "messages",
     {
         id: serial("id").primaryKey(),
-        messageId: text("message_id").notNull().unique(),
+        // this is the actual message creation timestamp
+        createdAt: timestamp("created_at").notNull(),
+        guildId: text("guild_id"),
         channelId: text("channel_id").notNull(),
-        createdAt: timestamp("created_at").defaultNow().notNull(),
-        content: text("content"),
-        replyTo: text("reply_to"),
-        // thread
         threadId: text("thread_id"),
         threadParentChannelId: text("thread_parent_channel_id"),
-        threadName: text("thread_name"),
-        // user
-        authorId: text("author_id").notNull(),
-        authorUsername: text("author_username").notNull(),
-        authorAvatarUrl: text("author_avatar_url"),
-        authorIsBot: boolean("author_is_bot").default(false).notNull(),
-        authorIsSystem: boolean("author_is_system").default(false).notNull(),
+        messageId: text("message_id").notNull().unique(),
+        // mapped from discord's `cleanContent` field
+        content: text("content"),
+        replyTo: text("reply_to"),
+        author: jsonb("author").notNull(),
+        raw: jsonb("raw").notNull(),
     },
     (table) => ({
         channelIdx: index("idx_channel").on(table.channelId),
@@ -37,9 +33,10 @@ export const messages = pgTable(
     })
 );
 
-export const replyToRelation = relations(messages, ({ one }) => ({
-    replyTo: one(messages, {
-        fields: [messages.replyTo],
-        references: [messages.messageId],
-    }),
-}));
+// todo: does this exist?
+// export const replyToRelation = relations(messages, ({ one }) => ({
+//     replyTo: one(messages, {
+//         fields: [messages.replyTo],
+//         references: [messages.messageId],
+//     }),
+// }));

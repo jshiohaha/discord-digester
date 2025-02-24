@@ -2,9 +2,9 @@ import { ForumChannel, Message, ThreadChannel } from "discord.js";
 import { and, eq } from "drizzle-orm";
 import { DateTime } from "luxon";
 import pRetry from "p-retry";
-import { Logger } from "pino";
 import { z } from "zod";
 
+import { FastifyBaseLogger } from "fastify";
 import { db } from "../../../db";
 import { wrappedParse } from "../../../routes/utils";
 import { threadBasedChannelCheckpointer as threadBasedChannelCheckpointerSchema } from "../../../schema/checkpointer";
@@ -64,24 +64,19 @@ const markBackfillComplete = async (channelId: string, threadId: string) => {
 
 const handleMessages = async (
     messages: Array<Message>,
-    opts?: { logger?: Nullish<Logger> }
+    opts?: { logger?: Nullish<FastifyBaseLogger> }
 ) => {
     const values = messages.map((message) => ({
         messageId: message.id,
+        guildId: message.guildId,
         channelId: message.channelId,
         createdAt: message.createdAt,
-        content: message.content,
+        content: message.cleanContent,
+        threadId: message.thread?.id ?? null,
+        threadParentChannelId: message.thread?.parentId ?? null,
         replyTo: message.reference?.messageId,
-        // thread
-        threadId: message.thread?.id,
-        threadParentChannelId: message.thread?.parentId,
-        threadName: message.thread?.name,
-        // author
-        authorId: message.author.id,
-        authorUsername: message.author.username,
-        authorAvatarUrl: message.author.displayAvatarURL(),
-        authorIsBot: message.author.bot,
-        authorIsSystem: message.author.system,
+        author: message.author.toJSON(),
+        raw: message.toJSON(),
     }));
 
     if (values.length > 0) {
@@ -99,7 +94,7 @@ const handleMessages = async (
 
 const handleMessagesWithRetry = async (
     messages: Array<Message>,
-    opts?: { logger?: Nullish<Logger>; batchInsertRetries?: number }
+    opts?: { logger?: Nullish<FastifyBaseLogger>; batchInsertRetries?: number }
 ) => {
     await pRetry(async () => handleMessages(messages, opts), {
         retries: opts?.batchInsertRetries ?? 3,
@@ -117,7 +112,7 @@ const fetchThreadMessages = async (
     channel: ForumChannel,
     threadId: string,
     opts?: {
-        logger?: Nullish<Logger>;
+        logger?: Nullish<FastifyBaseLogger>;
         perRequestFetchLimit?: number;
         batchInsertRetries?: number;
     }
@@ -203,7 +198,7 @@ const FetchHistoricalThreadBasedMessagesArgsSchema = z.object({
             "perRequestFetchLimit should not exceed 100 as per Discord API limits"
         )
         .optional(),
-    logger: z.custom<Logger>().nullish(),
+    logger: z.custom<FastifyBaseLogger>().nullish(),
 });
 
 type FetchHistoricalThreadBasedMessagesArgs = z.infer<
@@ -254,7 +249,7 @@ export const fetchHistoricalThreadBasedMessages = async (
                     isThreadBackfillCompleted(channel.id, thread.id)
             );
 
-            console.log(
+            logger?.info(
                 `Found ${threadsToProcess.length} threads to process in channel ${channel.id}.`
             );
 
@@ -267,7 +262,7 @@ export const fetchHistoricalThreadBasedMessages = async (
             }
 
             for (const thread of threadsToProcess) {
-                console.log(
+                logger?.info(
                     `Backfilling messages from thread ${thread.id} (${thread.name})`
                 );
 

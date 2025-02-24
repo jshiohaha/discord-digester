@@ -4,7 +4,7 @@ import {
     GuildBasedChannel,
     TextBasedChannel,
 } from "discord.js";
-import { and, count, desc, eq, gt, lt } from "drizzle-orm";
+import { and, desc, eq, gt, lt } from "drizzle-orm";
 import {
     FastifyInstance,
     FastifyPluginAsync,
@@ -13,6 +13,7 @@ import {
 } from "fastify";
 import { z } from "zod";
 
+import { DateTime } from "luxon";
 import { fetchHistoricalMessages } from "../lib/discord/historical/text-channel";
 import { fetchHistoricalThreadBasedMessages } from "../lib/discord/historical/thread-channel";
 import { validateApiKey } from "../middleware/auth";
@@ -22,7 +23,7 @@ import {
     threadBasedChannelCheckpointer as threadBasedChannelCheckpointerSchema,
 } from "../schema/checkpointer";
 import { messages as messagesSchema } from "../schema/messages";
-import { ApiResponse } from "../types/api";
+import { ApiResponse, ApiResponseSchema } from "../types/api";
 import { wrappedHandler, wrappedParse } from "./utils";
 
 const GetMessagesRequestParamsSchema = z.object({
@@ -30,35 +31,25 @@ const GetMessagesRequestParamsSchema = z.object({
 });
 
 const GetMessagesRequestQuerySchema = z.object({
-    startDate: z.coerce
-        .date()
+    before: z.coerce
+        .number()
         .optional()
-        .describe("Start date for filtering messages"),
-    endDate: z.coerce
-        .date()
+        .describe("Epoch timestamp for filtering messages before"),
+    after: z.coerce
+        .number()
         .optional()
-        .describe("End date for filtering messages"),
+        .describe("Epoch timestamp for filtering messages after"),
     limit: z
         .number()
         .int()
         .positive()
         .default(100)
         .describe("Maximum number of messages to return"),
-    offset: z
-        .number()
-        .int()
-        .nonnegative()
-        .default(0)
-        .describe("Pagination offset"),
 });
 
 const DbMessageSchema = z.custom<typeof messagesSchema.$inferSelect>();
 const MessagesResponseSchema = z.object({
     messages: z.array(DbMessageSchema),
-    meta: z.object({
-        total: z.number().int().nonnegative(),
-        hasMore: z.boolean(),
-    }),
 });
 
 /**
@@ -156,86 +147,70 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
             throw new Error(`Channel ${channelId} not registered`);
         }
 
-        try {
-            if (channel.isTextBased()) {
-                await db
-                    .update(textBasedChannelCheckpointerSchema)
-                    .set({
-                        status: "in_progress",
-                    })
-                    .where(
-                        and(
-                            eq(
-                                textBasedChannelCheckpointerSchema.channelId,
-                                channelId
-                            ),
-                            eq(
-                                textBasedChannelCheckpointerSchema.status,
-                                "pending"
-                            )
-                        )
-                    );
+        if (channel.isTextBased()) {
+            await db
+                .update(textBasedChannelCheckpointerSchema)
+                .set({
+                    status: "in_progress",
+                })
+                .where(
+                    and(
+                        eq(
+                            textBasedChannelCheckpointerSchema.channelId,
+                            channelId
+                        ),
+                        eq(textBasedChannelCheckpointerSchema.status, "pending")
+                    )
+                );
 
-                await fetchHistoricalMessages({
-                    channel: channel as GuildBasedChannel & TextBasedChannel,
-                    before,
-                    maxRetries,
-                    // logger,
-                });
-            } else if (channel.type === ChannelType.GuildForum) {
-                if (!threadId) {
-                    throw new Error(
-                        "Thread ID is required for forum based channels"
-                    );
-                }
-
-                await db
-                    .update(threadBasedChannelCheckpointerSchema)
-                    .set({
-                        status: "in_progress",
-                    })
-                    .where(
-                        and(
-                            eq(
-                                threadBasedChannelCheckpointerSchema.channelId,
-                                channelId
-                            ),
-                            eq(
-                                threadBasedChannelCheckpointerSchema.threadId,
-                                ""
-                            ),
-                            eq(
-                                threadBasedChannelCheckpointerSchema.status,
-                                "pending"
-                            )
-                        )
-                    );
-
-                await fetchHistoricalThreadBasedMessages({
-                    channel: channel as ForumChannel,
-                    threadId,
-                    before,
-                    maxRetries,
-                    // logger,
-                });
-            } else {
+            await fetchHistoricalMessages({
+                channel: channel as GuildBasedChannel & TextBasedChannel,
+                before,
+                maxRetries,
+                logger: fastify.log,
+            });
+        } else if (channel.type === ChannelType.GuildForum) {
+            if (!threadId) {
                 throw new Error(
-                    `Channel ${channel.id} type ${channel.type} does not support messages`
+                    "Thread ID is required for forum based channels"
                 );
             }
 
-            return {
-                status: 200,
-            };
-        } catch (error) {
-            fastify.log.error({
-                msg: "Backfill failed",
-                channelId,
-                error: error instanceof Error ? error.message : String(error),
-            });
+            await db
+                .update(threadBasedChannelCheckpointerSchema)
+                .set({
+                    status: "in_progress",
+                })
+                .where(
+                    and(
+                        eq(
+                            threadBasedChannelCheckpointerSchema.channelId,
+                            channelId
+                        ),
+                        eq(threadBasedChannelCheckpointerSchema.threadId, ""),
+                        eq(
+                            threadBasedChannelCheckpointerSchema.status,
+                            "pending"
+                        )
+                    )
+                );
 
-            throw new Error("Failed to backfill messages");
+            await fetchHistoricalThreadBasedMessages({
+                channel: channel as ForumChannel,
+                threadId,
+                before,
+                maxRetries,
+                logger: fastify.log,
+            });
+        } else {
+            throw new Error(
+                `Channel ${channel.id} type ${channel.type} does not support messages`
+            );
         }
+
+        return {
+            status: 200,
+        };
     },
 
     getMessages: async (
@@ -249,7 +224,7 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
             "get_messages::path_params"
         );
 
-        const { startDate, endDate, limit, offset } = wrappedParse(
+        const { before, after, limit } = wrappedParse(
             GetMessagesRequestQuerySchema,
             request.query,
             "get_messages::query_params"
@@ -263,61 +238,24 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
             throw new Error("Channel not found");
         }
 
+        const beforeDate = before ? DateTime.fromSeconds(before) : undefined;
+        const afterDate = after ? DateTime.fromSeconds(after) : undefined;
+
         const whereConditions = [
             eq(messagesSchema.channelId, channelId),
-            ...(startDate ? [gt(messagesSchema.createdAt, startDate)] : []),
-            ...(endDate ? [lt(messagesSchema.createdAt, endDate)] : []),
+            ...(beforeDate
+                ? [lt(messagesSchema.createdAt, beforeDate.toJSDate())]
+                : []),
+            ...(afterDate
+                ? [gt(messagesSchema.createdAt, afterDate.toJSDate())]
+                : []),
         ];
 
-        const [messages, totalCount] = await Promise.all([
-            db.query.messages.findMany({
-                where: and(...whereConditions),
-                orderBy: desc(messagesSchema.createdAt),
-                limit,
-                offset,
-            }),
-            db
-                .select({ count: count() })
-                .from(messagesSchema)
-                .where(and(...whereConditions)),
-        ]);
-
-        return {
-            status: 200,
-            data: {
-                messages,
-                meta: {
-                    total: totalCount[0].count,
-                    hasMore: totalCount[0].count > offset + limit,
-                },
-            },
-        };
-    },
-
-    sampleMessages: async (
-        request: FastifyRequest,
-        reply: FastifyReply
-    ): Promise<ApiResponse<any>> => {
-        const { channelId } = wrappedParse(
-            GetMessagesRequestParamsSchema,
-            request.params,
-            "get_messages::path_params"
-        );
-
-        const channel =
-            await fastify.dependencies.discordClient?.channels.fetch(channelId);
-        if (!channel) {
-            throw new Error("Channel not found");
-        }
-
-        if (!channel || !channel.isTextBased()) {
-            throw new Error("Channel not found or is not text-based");
-        }
-
-        const messages = await channel.messages.fetch({ limit: 100 });
-
-        fastify.log.info(messages.size);
-        fastify.log.info(messages);
+        const messages = await db.query.messages.findMany({
+            where: and(...whereConditions),
+            orderBy: desc(messagesSchema.createdAt),
+            limit,
+        });
 
         return {
             status: 200,
@@ -342,15 +280,8 @@ export const messagesRoutes: FastifyPluginAsync = async (fastify) => {
         schema: {
             body: BackfillMessagesRequestSchema,
             response: {
-                200: z.object({ processed: z.number() }),
+                200: ApiResponseSchema(z.void()),
                 400: z.object({ error: z.string() }),
-            },
-            headers: {
-                type: "object",
-                required: ["x-api-key"],
-                properties: {
-                    "x-api-key": { type: "string" },
-                },
             },
         },
         handler: wrappedHandler(fastify)(handlers.backfillMessages),
@@ -362,37 +293,10 @@ export const messagesRoutes: FastifyPluginAsync = async (fastify) => {
             params: GetMessagesRequestParamsSchema,
             querystring: GetMessagesRequestQuerySchema,
             response: {
-                200: MessagesResponseSchema,
+                200: ApiResponseSchema(MessagesResponseSchema),
                 404: z.object({ error: z.string() }),
-            },
-            headers: {
-                type: "object",
-                required: ["x-api-key"],
-                properties: {
-                    "x-api-key": { type: "string" },
-                },
             },
         },
         handler: wrappedHandler(fastify)(handlers.getMessages),
-    });
-
-    // GET /messages/:channelId/sample
-    fastify.get("/messages/:channelId/sample", {
-        schema: {
-            params: GetMessagesRequestParamsSchema,
-            querystring: GetMessagesRequestQuerySchema,
-            response: {
-                200: z.any(),
-                404: z.object({ error: z.string() }),
-            },
-            headers: {
-                type: "object",
-                required: ["x-api-key"],
-                properties: {
-                    "x-api-key": { type: "string" },
-                },
-            },
-        },
-        handler: wrappedHandler(fastify)(handlers.sampleMessages),
     });
 };

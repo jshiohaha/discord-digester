@@ -30,7 +30,6 @@ export const wrappedHandler =
             return await handler(req, reply);
         } catch (error) {
             fastify.log.error(error);
-            console.error(error);
             return reply.status(500).send({
                 status: 500,
                 error: "Internal Server Error",

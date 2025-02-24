@@ -12,7 +12,7 @@ const EnvConfigSchema = z
         LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]),
         PORT: z.string().trim().optional().default("3000"),
         DATABASE_URL: z.string().trim(),
-        API_KEY: z.string().trim().optional(),
+        API_KEY: z.string().optional(),
     })
     .transform((env) => ({
         ...env,

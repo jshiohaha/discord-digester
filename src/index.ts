@@ -57,7 +57,6 @@ export const ValidationErrorSchema = z.object({
 export type ValidationError = z.infer<typeof ValidationErrorSchema>;
 
 const start = async () => {
-    console.log("Starting server...");
     /**
      * note: we can implement a custom logger if we want to,
      * but the initial implementation was causing a lot of errors
@@ -104,7 +103,19 @@ const start = async () => {
             });
         });
 
+    fastify.log.info("Initialized fastify instance...");
+
     try {
+        // note: we can add global authentication for all /api routes like this
+        // fastify.addHook("onRequest", async (request, reply) => {
+        //     if (request.url.startsWith("/api")) {
+        //         // Skip auth for health check endpoint if needed
+        //         if (request.url === "/api/v1/health") return;
+
+        //         await validateApiKey(request, reply);
+        //     }
+        // });
+
         fastify.get("/health", async () => ({ status: "ok" }));
 
         try {
@@ -131,20 +142,24 @@ const start = async () => {
 
             fastify.decorate("dependencies", {
                 db,
+                client,
                 discordClient,
             });
 
-            // note: debugging hook
-            // fastify.addHook("onRequest", (request, reply, done) => {
-            //     console.log("Request dependencies defined?", {
-            //         db: db === undefined,
-            //         discordClient: discordClient === undefined,
-            //     });
-
-            //     done();
-            // });
+            /**
+             * note: can create a debugging hook like this
+             *
+             *  fastify.addHook("onRequest", (request, reply, done) => {
+             *      fastify.log.info("Request dependencies defined?", {
+             *          db: db === undefined,
+             *          discordClient: discordClient === undefined,
+             *      });
+             *
+             *      done();
+             *  });
+             */
         } catch (error) {
-            console.error("Failed to initialize dependencies", error);
+            fastify.log.error(error, "Failed to initialize dependencies");
             throw error;
         }
 
@@ -152,7 +167,7 @@ const start = async () => {
         await fastify.register(messagesRoutes, { prefix: "/api/v1" });
         fastify.log.info("Plugins registered successfully");
 
-        console.log("Serving traffic...");
+        fastify.log.info("Serving traffic...");
         await fastify.listen({
             port: EnvConfig.PORT,
             host: "0.0.0.0",
@@ -160,8 +175,9 @@ const start = async () => {
 
         const shutdown = async (signal: string) => {
             fastify.log.info(`Received ${signal}, closing server...`);
+
             await fastify.close();
-            // await fastify.dependencies.db.$client.end();
+            await fastify.dependencies.client.end();
             await fastify.dependencies.discordClient?.destroy();
             process.exit(0);
         };
@@ -182,6 +198,7 @@ declare module "fastify" {
     interface FastifyInstance {
         dependencies: {
             db: typeof db;
+            client: typeof client;
             discordClient?: Client;
         };
     }
