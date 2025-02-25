@@ -4,7 +4,7 @@ import {
     GuildBasedChannel,
     TextBasedChannel,
 } from "discord.js";
-import { and, desc, eq, gt, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gt, lt } from "drizzle-orm";
 import {
     FastifyInstance,
     FastifyPluginAsync,
@@ -39,12 +39,16 @@ const GetMessagesRequestQuerySchema = z.object({
         .number()
         .optional()
         .describe("Epoch timestamp for filtering messages after"),
-    limit: z
+    limit: z.coerce
         .number()
         .int()
         .positive()
         .default(100)
         .describe("Maximum number of messages to return"),
+    sort: z
+        .enum(["asc", "desc"])
+        .default("desc")
+        .describe("Sort direction for messages (ascending or descending)"),
 });
 
 const DbMessageSchema = z.custom<typeof messagesSchema.$inferSelect>();
@@ -224,7 +228,7 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
             "get_messages::path_params"
         );
 
-        const { before, after, limit } = wrappedParse(
+        const { before, after, limit, sort } = wrappedParse(
             GetMessagesRequestQuerySchema,
             request.query,
             "get_messages::query_params"
@@ -253,7 +257,10 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
 
         const messages = await db.query.messages.findMany({
             where: and(...whereConditions),
-            orderBy: desc(messagesSchema.createdAt),
+            orderBy:
+                sort === "asc"
+                    ? asc(messagesSchema.createdAt)
+                    : desc(messagesSchema.createdAt),
             limit,
         });
 
