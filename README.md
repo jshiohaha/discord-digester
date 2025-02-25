@@ -50,6 +50,8 @@ The Discord Digester API provides several endpoints to manage channels and retri
 
 The API is currently hosted on railway and is available at `https://discord-digester-production.up.railway.app`.
 
+🛠️ I use an API client called [Yaak](https://yaak.app) to test APIs. I exported my workspace configuration [here](./.yaak/yaak.discord-digester.json). If you want to quickly get started with the API, you can import it into Yaak to get started. Make sure your environment is set to production, unless you have the service running locally.
+
 ## Authentication
 
 Protected endpoints require an API key to be included in the request headers:

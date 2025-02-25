@@ -1,0 +1,308 @@
+{
+  "yaakVersion": "2025.1.1",
+  "yaakSchema": 3,
+  "timestamp": "2025-02-25T17:12:06.835864",
+  "resources": {
+    "workspaces": [
+      {
+        "model": "workspace",
+        "id": "wk_DRwMFaGq8D",
+        "createdAt": "2025-02-24T05:15:45.672113",
+        "updatedAt": "2025-02-24T05:15:45.672113",
+        "name": "discord-digester",
+        "description": "",
+        "settingValidateCertificates": true,
+        "settingFollowRedirects": true,
+        "settingRequestTimeout": 0
+      }
+    ],
+    "environments": [
+      {
+        "model": "environment",
+        "id": "ev_dXmth5mShK",
+        "workspaceId": "wk_DRwMFaGq8D",
+        "environmentId": null,
+        "createdAt": "2025-02-24T05:15:45.698102",
+        "updatedAt": "2025-02-24T05:15:45.698102",
+        "name": "Global Variables",
+        "variables": []
+      },
+      {
+        "model": "environment",
+        "id": "ev_boXG3VXbB6",
+        "workspaceId": "wk_DRwMFaGq8D",
+        "environmentId": "ev_dXmth5mShK",
+        "createdAt": "2025-02-24T05:15:55.496865",
+        "updatedAt": "2025-02-24T05:16:02.088155",
+        "name": "Local",
+        "variables": [
+          {
+            "enabled": true,
+            "name": "host",
+            "value": "http://localhost:3000",
+            "id": "V8bXJvIh3S"
+          }
+        ]
+      },
+      {
+        "model": "environment",
+        "id": "ev_3D5k7jBrNV",
+        "workspaceId": "wk_DRwMFaGq8D",
+        "environmentId": "ev_dXmth5mShK",
+        "createdAt": "2025-02-24T05:15:52.373567",
+        "updatedAt": "2025-02-24T05:16:13.060945",
+        "name": "Production",
+        "variables": [
+          {
+            "enabled": true,
+            "name": "host",
+            "value": "discord-digester-production.up.railway.app",
+            "id": "8pNZvkcrrh"
+          }
+        ]
+      }
+    ],
+    "folders": [],
+    "httpRequests": [
+      {
+        "model": "http_request",
+        "id": "rq_CQ88LEqzgc",
+        "createdAt": "2025-02-24T13:49:32.019874",
+        "updatedAt": "2025-02-24T13:58:19.491215",
+        "workspaceId": "wk_DRwMFaGq8D",
+        "folderId": null,
+        "authentication": {},
+        "authenticationType": null,
+        "body": {},
+        "bodyType": null,
+        "description": "",
+        "headers": [],
+        "method": "GET",
+        "name": "Health",
+        "sortPriority": 8000.0,
+        "url": "${[ host ]}/health",
+        "urlParameters": []
+      },
+      {
+        "model": "http_request",
+        "id": "rq_ygqPfvwduJ",
+        "createdAt": "2025-02-24T13:34:51.591644",
+        "updatedAt": "2025-02-24T13:58:21.551094",
+        "workspaceId": "wk_DRwMFaGq8D",
+        "folderId": null,
+        "authentication": {},
+        "authenticationType": null,
+        "body": {},
+        "bodyType": null,
+        "description": "",
+        "headers": [
+          {
+            "enabled": true,
+            "name": "",
+            "value": "",
+            "id": "P4y6YZdeQB"
+          }
+        ],
+        "method": "GET",
+        "name": "List channels",
+        "sortPriority": 1000.0,
+        "url": "${[ host ]}/api/v1/channels?name=proposal-",
+        "urlParameters": []
+      },
+      {
+        "model": "http_request",
+        "id": "rq_bjyPLZgG4B",
+        "createdAt": "2025-02-24T05:53:38.616962",
+        "updatedAt": "2025-02-24T13:58:19.490258",
+        "workspaceId": "wk_DRwMFaGq8D",
+        "folderId": null,
+        "authentication": {},
+        "authenticationType": null,
+        "body": {},
+        "bodyType": null,
+        "description": "",
+        "headers": [],
+        "method": "GET",
+        "name": "Get allowed channels",
+        "sortPriority": 0.0,
+        "url": "${[ host ]}/api/v1/channels/allowed",
+        "urlParameters": []
+      },
+      {
+        "model": "http_request",
+        "id": "rq_uG5R5eYaCm",
+        "createdAt": "2025-02-24T05:21:31.867077",
+        "updatedAt": "2025-02-25T16:46:32.774792",
+        "workspaceId": "wk_DRwMFaGq8D",
+        "folderId": null,
+        "authentication": {},
+        "authenticationType": null,
+        "body": {},
+        "bodyType": null,
+        "description": "",
+        "headers": [],
+        "method": "GET",
+        "name": "Get channel messages",
+        "sortPriority": 2000.0,
+        "url": "${[ host ]}/api/v1/messages/:channelId?sort=asc&limit=10",
+        "urlParameters": [
+          {
+            "enabled": true,
+            "name": ":channelId",
+            "value": "1211496212612644944",
+            "id": "ucrca3mXeE"
+          },
+          {
+            "enabled": true,
+            "name": "",
+            "value": "",
+            "id": "Bnr73HPzY9"
+          }
+        ]
+      },
+      {
+        "model": "http_request",
+        "id": "rq_rtPaGBCs2x",
+        "createdAt": "2025-02-24T05:19:12.434213",
+        "updatedAt": "2025-02-25T17:11:49.278507",
+        "workspaceId": "wk_DRwMFaGq8D",
+        "folderId": null,
+        "authentication": {},
+        "authenticationType": null,
+        "body": {},
+        "bodyType": null,
+        "description": "",
+        "headers": [
+          {
+            "enabled": true,
+            "name": "",
+            "value": "",
+            "id": "feYzvKpPI8"
+          }
+        ],
+        "method": "GET",
+        "name": "Get guild channels",
+        "sortPriority": 3000.0,
+        "url": "${[ host ]}/api/v1/channels/guild",
+        "urlParameters": []
+      },
+      {
+        "model": "http_request",
+        "id": "rq_zpPkmhjfjT",
+        "createdAt": "2025-02-24T05:18:27.408679",
+        "updatedAt": "2025-02-25T17:11:53.535907",
+        "workspaceId": "wk_DRwMFaGq8D",
+        "folderId": null,
+        "authentication": {},
+        "authenticationType": null,
+        "body": {
+          "text": "{\n  \"channelId\": \"1211496212612644944\"\n}"
+        },
+        "bodyType": "application/json",
+        "description": "",
+        "headers": [
+          {
+            "enabled": true,
+            "name": "Content-",
+            "value": "application/json",
+            "id": "7sabhyJTDw"
+          },
+          {
+            "enabled": true,
+            "name": "",
+            "value": "",
+            "id": "dQQeIV5wgf"
+          }
+        ],
+        "method": "POST",
+        "name": "Backfill messages",
+        "sortPriority": 4000.0,
+        "url": "${[ host ]}/api/v1/messages/backfill",
+        "urlParameters": []
+      },
+      {
+        "model": "http_request",
+        "id": "rq_RZz49UU3vT",
+        "createdAt": "2025-02-24T05:17:20.046663",
+        "updatedAt": "2025-02-24T13:58:19.491051",
+        "workspaceId": "wk_DRwMFaGq8D",
+        "folderId": null,
+        "authentication": {},
+        "authenticationType": null,
+        "body": {},
+        "bodyType": null,
+        "description": "",
+        "headers": [],
+        "method": "POST",
+        "name": "Sync channels",
+        "sortPriority": 5000.0,
+        "url": "${[ host ]}/api/v1/channels/sync",
+        "urlParameters": []
+      },
+      {
+        "model": "http_request",
+        "id": "rq_UGSqbkFUBg",
+        "createdAt": "2025-02-24T05:17:12.533927",
+        "updatedAt": "2025-02-24T13:58:19.491066",
+        "workspaceId": "wk_DRwMFaGq8D",
+        "folderId": null,
+        "authentication": {},
+        "authenticationType": null,
+        "body": {
+          "text": "{\n  \"id\": \"1199177850109046868\"\n}"
+        },
+        "bodyType": "application/json",
+        "description": "",
+        "headers": [
+          {
+            "enabled": true,
+            "name": "Content-Type",
+            "value": "application/json",
+            "id": "GcRfb9nXY7"
+          }
+        ],
+        "method": "DELETE",
+        "name": "Remove allowed channel",
+        "sortPriority": 6000.0,
+        "url": "${[ host ]}/api/v1/channels/allowed",
+        "urlParameters": []
+      },
+      {
+        "model": "http_request",
+        "id": "rq_oPmHeTPrJP",
+        "createdAt": "2025-02-24T05:16:47.038724",
+        "updatedAt": "2025-02-25T17:11:41.823507",
+        "workspaceId": "wk_DRwMFaGq8D",
+        "folderId": null,
+        "authentication": {},
+        "authenticationType": null,
+        "body": {
+          "text": "{\n  \"ids\": [\n    \"1213859734520856606\",\n    \"1217516712862416956\",\n    \"1219466999684534282\"\n  ]\n}"
+        },
+        "bodyType": "application/json",
+        "description": "",
+        "headers": [
+          {
+            "enabled": true,
+            "name": "Content-Type",
+            "value": "application/json",
+            "id": "GcRfb9nXY7"
+          },
+          {
+            "enabled": true,
+            "name": "",
+            "value": "",
+            "id": "z5b324dsz6"
+          }
+        ],
+        "method": "POST",
+        "name": "Add allowed channels",
+        "sortPriority": 7000.0,
+        "url": "${[ host ]}/api/v1/channels/allowed",
+        "urlParameters": []
+      }
+    ],
+    "grpcRequests": [],
+    "websocketRequests": []
+  }
+}
