@@ -42,8 +42,293 @@ Discord Digester is a tool that extracts, stores, and makes Discord content easi
 
 ### Future work
 
--   Support for backfilling thread based channels
 -   Use an archiver process to move completed conversations into a read-only archive, like arweave
+
+# API Reference
+
+The Discord Digester API provides several endpoints to manage channels and retrieve messages. Some endpoints require API key authentication, which should be provided in the request headers.
+
+The API is currently hosted on railway and is available at `https://discord-digester-production.up.railway.app`.
+
+## Authentication
+
+Protected endpoints require an API key to be included in the request headers:
+
+```
+Authorization: Bearer <YOUR_API_KEY>
+```
+
+## Messages
+
+### Get Messages from Channel
+
+📔 This is the main endpoint that API consumers will likely care about. It allows users to retrieve messages from a specific allowlisted channel.
+
+```
+GET /api/v1/messages/:channelId
+```
+
+Retrieves messages from a specific channel. To see the channels that are in the allowlist, use the `GET /api/v1/channels/allowed` endpoint.
+
+The query parameters allow you to filter the messages by date and limit the number of messages returned. If you want to fetch increasingly older messages from channel, you can keep updating the `before` parameter with the ID of the last message you received.
+
+**Path Parameters:**
+
+-   `channelId`: ID of the channel to retrieve messages from
+
+**Query Parameters:**
+
+-   `before` (optional): Epoch timestamp to filter messages before
+-   `after` (optional): Epoch timestamp to filter messages after
+-   `limit` (optional): Maximum number of messages to return (default: 100)
+-   `sort` (optional): Sort direction, either "asc" or "desc" (default: "desc")
+
+**Authentication:** Not required
+
+**Response:**
+
+```json
+{
+    "status": 200,
+    "data": {
+        "messages": [
+            {
+                "messageId": "123456789012345678",
+                "channelId": "123456789012345678",
+                "content": "Hello world!",
+                "createdAt": "2023-01-01T00:00:00.000Z",
+                "authorId": "123456789012345678",
+                "authorUsername": "user123"
+            }
+        ]
+    }
+}
+```
+
+### Backfill Messages
+
+```
+POST /api/v1/messages/backfill
+```
+
+Backfills historical messages from a specified channel or thread.
+
+**Authentication:** API key required
+
+**Request Body:**
+
+```json
+{
+    "channelId": "123456789012345678",
+    "threadId": "987654321098765432", // Optional
+    "threads": ["active", "archived"], // Optional, default: ["active", "archived"]
+    "maxRetries": 3, // Optional, default: 3
+    "before": "123456789012345678" // Optional, message ID to get messages before
+}
+```
+
+**Response:**
+
+```json
+{
+    "status": 200
+}
+```
+
+## Channels
+
+### List Allowed Channels
+
+```
+GET /api/v1/channels/allowed
+```
+
+Returns a list of channels that are on the allowlist for message syncing.
+
+**Authentication:** Not required
+
+**Response:**
+
+```json
+{
+    "status": 200,
+    "data": [
+        {
+            "channelId": "123456789012345678",
+            "name": "general",
+            "updatedAt": "2023-01-01T00:00:00.000Z",
+            "isPublic": true,
+            "allowed": true,
+            "type": "text",
+            "parentId": null
+        }
+    ]
+}
+```
+
+### List All Channels
+
+```
+GET /api/v1/channels
+```
+
+Returns a list of all channels that have been synced to the database.
+
+**Query Parameters:**
+
+-   `name` (optional): Filter channels by name (case-insensitive, partial match)
+
+**Authentication:** Not required
+
+**Response:**
+
+```json
+{
+    "status": 200,
+    "data": [
+        {
+            "channelId": "123456789012345678",
+            "name": "general",
+            "updatedAt": "2023-01-01T00:00:00.000Z",
+            "isPublic": true,
+            "allowed": true,
+            "type": "text",
+            "parentId": null
+        }
+    ]
+}
+```
+
+### List Guild Channels
+
+```
+GET /api/v1/channels/guild
+```
+
+Returns a list of all channels in the Discord guild that the bot has access to.
+
+**Authentication:** API key required
+
+**Response:**
+
+```json
+{
+    "status": 200,
+    "data": [
+        {
+            "id": "123456789012345678",
+            "name": "general",
+            "type": "GUILD_TEXT",
+            "is_public": true
+        }
+    ]
+}
+```
+
+### Sync Channels
+
+```
+POST /api/v1/channels/sync
+```
+
+Syncs all channels from the Discord guild to the database.
+
+**Authentication:** API key required
+
+**Response:**
+
+```json
+{
+    "status": 200,
+    "data": {
+        "newChannelCount": 5
+    }
+}
+```
+
+### Add Channels to Allowlist
+
+```
+POST /api/v1/channels/allowed
+```
+
+Adds specified channels to the allowlist for message syncing.
+
+**Authentication:** API key required
+
+**Request Body:**
+
+```json
+{
+    "ids": ["123456789012345678", "987654321098765432"]
+}
+```
+
+**Response:**
+
+```json
+{
+    "status": 201,
+    "data": [
+        {
+            "channelId": "123456789012345678",
+            "name": "general",
+            "updatedAt": "2023-01-01T00:00:00.000Z",
+            "isPublic": true,
+            "allowed": true,
+            "type": "text",
+            "parentId": null
+        }
+    ]
+}
+```
+
+### Remove Channels from Allowlist
+
+```
+DELETE /api/v1/channels/allowed
+```
+
+Removes specified channels from the allowlist.
+
+**Authentication:** API key required
+
+**Request Body:**
+
+```json
+{
+    "ids": ["123456789012345678"]
+}
+```
+
+**Response:**
+
+```json
+{
+    "status": 200,
+    "data": {
+        "message": "Channels removed from allowlist"
+    }
+}
+```
+
+## Health Check
+
+```
+GET /health
+```
+
+Simple health check endpoint to verify the API is running. This endpoint is used during the deployment process to ensure the API is up and running.
+
+**Authentication:** Not required
+
+**Response:**
+
+```json
+{
+    "status": "ok"
+}
+```
 
 # Getting Started
 
