@@ -1,5 +1,5 @@
 import { NonThreadGuildBasedChannel } from "discord.js";
-import { and, eq, ilike } from "drizzle-orm";
+import { and, eq, ilike, inArray } from "drizzle-orm";
 import {
     FastifyInstance,
     FastifyPluginAsync,
@@ -19,20 +19,12 @@ import {
 import { wrappedHandler, wrappedParse } from "./utils";
 
 const AddChannelToAllowlistRequestSchema = z.object({
-    id: z.string().min(1, "Channel id is required"),
+    ids: z.array(z.string()).min(1, "Must provide at least one channel id"),
 });
-
-type AddChannelToAllowlistRequest = z.infer<
-    typeof AddChannelToAllowlistRequestSchema
->;
 
 const RemoveChannelFromAllowlistRequestSchema = z.object({
-    id: z.string().min(1, "Channel id is required"),
+    ids: z.array(z.string()).min(1, "Must provide at least one channel id"),
 });
-
-type RemoveChannelFromAllowlistRequest = z.infer<
-    typeof RemoveChannelFromAllowlistRequestSchema
->;
 
 const ChannelResponseSchema = z.object({
     channelId: z.string(),
@@ -41,6 +33,7 @@ const ChannelResponseSchema = z.object({
     isPublic: z.boolean(),
     allowed: z.boolean(),
     type: z.string(),
+    parentId: z.string().nullable(),
 });
 
 const ChannelsResponseSchema = z.array(ChannelResponseSchema);
@@ -191,6 +184,7 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
                 allowed: channelsSchema.allowed,
                 type: channelsSchema.type,
                 updatedAt: channelsSchema.updatedAt,
+                parentId: channelsSchema.parentId,
             })
             .from(channelsSchema)
             .where(whereClause)
@@ -216,6 +210,7 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
                 allowed: channelsSchema.allowed,
                 type: channelsSchema.type,
                 updatedAt: channelsSchema.updatedAt,
+                parentId: channelsSchema.parentId,
             })
             .from(channelsSchema)
             .where(eq(channelsSchema.allowed, true))
@@ -227,34 +222,20 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
         };
     },
 
+    // note: currently assumes we already have channel in the database after the sync operation
     addChannelToAllowlist: async (
         request: FastifyRequest,
         reply: FastifyReply
-    ): Promise<ApiResponse<z.infer<typeof ChannelResponseSchema>>> => {
-        const { id } = request.body as AddChannelToAllowlistRequest;
+    ): Promise<ApiResponse<z.infer<typeof ChannelsResponseSchema>>> => {
         const { db, discordClient } = fastify.dependencies;
+        const { ids } = wrappedParse(
+            AddChannelToAllowlistRequestSchema,
+            request.body,
+            "add_channel_to_allowlist::body"
+        );
 
-        fastify.log.info("trying to match channel id", id);
+        fastify.log.info("trying to match channel ids", ids);
 
-        const channel = await db.query.channels.findFirst({
-            where: eq(channelsSchema.channelId, id),
-        });
-        fastify.log.info("channel", channel);
-
-        if (!channel) {
-            return {
-                status: 404,
-                error: "Channel not found",
-            };
-        }
-
-        // if channel is already allowed, return it
-        if (channel?.allowed) {
-            return {
-                status: 200,
-                data: channel,
-            };
-        }
         const guild = discordClient?.guilds.cache.first();
         if (!guild) {
             return {
@@ -263,51 +244,67 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
             };
         }
 
-        const discordChannel = await guild.channels.fetch(id);
-        if (!discordChannel) {
-            return {
-                status: 404,
-                error: "Channel not found in guild",
-            };
+        const results: z.infer<typeof ChannelsResponseSchema> = [];
+        const channelIdsWithErrors: string[] = [];
+
+        // process each channel ID separately
+        for (const id of ids) {
+            try {
+                const channel = await db.query.channels.findFirst({
+                    where: eq(channelsSchema.channelId, id),
+                });
+
+                if (!channel) {
+                    fastify.log.error("channel not found", id);
+                    channelIdsWithErrors.push(id);
+                    continue;
+                }
+
+                if (channel?.allowed) {
+                    results.push(channel);
+                    continue;
+                }
+
+                if (!channel?.isPublic) {
+                    fastify.log.error("channel is not public", id);
+                    channelIdsWithErrors.push(id);
+                    continue;
+                }
+
+                const [updatedChannel] = await db
+                    .update(channelsSchema)
+                    .set({
+                        allowed: true,
+                    })
+                    .where(eq(channelsSchema.channelId, id))
+                    .returning();
+
+                results.push(updatedChannel);
+            } catch (error) {
+                fastify.log.error(`Error processing channel ${id}: ${error}`);
+                channelIdsWithErrors.push(id);
+            }
         }
 
-        const isPublic = isPublicChannel(discordChannel, guild);
-        if (!isPublic) {
+        if (results.length === 0 && channelIdsWithErrors.length > 0) {
             return {
                 status: 400,
-                error: "Channel is not public",
+                error: `Failed to add channels: ${channelIdsWithErrors.join(
+                    ", "
+                )}`,
             };
         }
-
-        // const isMessageable = isMessageBasedChannel(discordChannel);
-        // if (!isMessageable) {
-        //     return {
-        //         status: 400,
-        //         error: "Channel is not message based",
-        //     };
-        // }
-
-        const [updatedChannel] = await db
-            .insert(channelsSchema)
-            .values({
-                channelId: id,
-                name: discordChannel.name,
-                isPublic: isPublic,
-                allowed: true,
-                type: discordChannel.type.toString().toLowerCase().trim(),
-            })
-            .onConflictDoUpdate({
-                target: channelsSchema.channelId,
-                set: {
-                    isPublic: isPublic,
-                    allowed: true,
-                },
-            })
-            .returning();
 
         return {
             status: 201,
-            data: updatedChannel,
+            data: results,
+            ...(channelIdsWithErrors.length > 0
+                ? {
+                      error: `Unprocessable channels: ${channelIdsWithErrors.join(
+                          ", "
+                      )}`,
+                  }
+                : {}),
         };
     },
 
@@ -315,24 +312,27 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
         request: FastifyRequest,
         reply: FastifyReply
     ): Promise<ApiResponse<{ message: string }>> => {
-        const { id } = request.body as RemoveChannelFromAllowlistRequest;
-
         const { db } = fastify.dependencies;
+        const { ids } = wrappedParse(
+            RemoveChannelFromAllowlistRequestSchema,
+            request.body,
+            "remove_channel_from_allowlist::body"
+        );
 
         try {
             await db
                 .update(channelsSchema)
                 .set({ allowed: false })
-                .where(eq(channelsSchema.channelId, id));
+                .where(inArray(channelsSchema.channelId, ids));
 
             return {
                 status: 200,
-                data: { message: "Channel removed from allowlist" },
+                data: { message: "Channels removed from allowlist" },
             };
         } catch (error) {
             return {
                 status: 500,
-                error: "Failed to remove channel from allowlist",
+                error: "Failed to remove channels from allowlist",
             };
         }
     },
@@ -398,7 +398,7 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         schema: {
             body: AddChannelToAllowlistRequestSchema,
             response: {
-                201: ApiResponseSchema(ChannelResponseSchema),
+                201: ApiResponseSchema(ChannelsResponseSchema),
                 400: ErrorResponseSchema,
                 404: ErrorResponseSchema,
                 500: ErrorResponseSchema,
