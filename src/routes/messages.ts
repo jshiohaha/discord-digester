@@ -34,14 +34,70 @@ const GetMessagesRequestParamsSchema = z.object({
 });
 
 const GetMessagesRequestQuerySchema = z.object({
-    before: z.coerce
-        .number()
+    before: z
+        .union([
+            z.coerce
+                .number()
+                .describe("Epoch timestamp for filtering messages before"),
+            z
+                .string()
+                .describe("ISO date string for filtering messages before"),
+        ])
         .optional()
-        .describe("Epoch timestamp for filtering messages before"),
-    after: z.coerce
-        .number()
+        .refine(
+            (val) => {
+                if (val === undefined) return true;
+                if (typeof val === "number") return !isNaN(val);
+                return DateTime.fromISO(val).isValid;
+            },
+            {
+                message:
+                    "Invalid date format. Please provide a valid date string or epoch timestamp",
+            }
+        )
+        .transform((val) => {
+            if (val === undefined) return undefined;
+            if (typeof val === "string") {
+                const dt = DateTime.fromISO(val);
+                if (!dt.isValid)
+                    throw new Error(dt.invalidReason || "Invalid date string");
+                return Math.floor(dt.toMillis());
+            }
+            return val;
+        }),
+    after: z
+        .union([
+            z.coerce
+                .number()
+                .describe("Epoch timestamp for filtering messages after"),
+            z
+                .string()
+                .describe(
+                    "ISO date string or formatted date string for filtering messages after"
+                ),
+        ])
         .optional()
-        .describe("Epoch timestamp for filtering messages after"),
+        .refine(
+            (val) => {
+                if (val === undefined) return true;
+                if (typeof val === "number") return !isNaN(val);
+                return DateTime.fromISO(val).isValid;
+            },
+            {
+                message:
+                    "Invalid date format. Please provide a valid date string or epoch timestamp",
+            }
+        )
+        .transform((val) => {
+            if (val === undefined) return undefined;
+            if (typeof val === "string") {
+                const dt = DateTime.fromISO(val);
+                if (!dt.isValid)
+                    throw new Error(dt.invalidReason || "Invalid date string");
+                return Math.floor(dt.toMillis());
+            }
+            return val;
+        }),
     limit: z.coerce
         .number()
         .int()
@@ -340,18 +396,25 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
             throw new Error("Channel not found");
         }
 
-        const beforeDate = before ? DateTime.fromSeconds(before) : undefined;
-        const afterDate = after ? DateTime.fromSeconds(after) : undefined;
+        const whereConditions = [eq(messagesSchema.channelId, channelId)];
 
-        const whereConditions = [
-            eq(messagesSchema.channelId, channelId),
-            ...(beforeDate
-                ? [lt(messagesSchema.createdAt, beforeDate.toJSDate())]
-                : []),
-            ...(afterDate
-                ? [gt(messagesSchema.createdAt, afterDate.toJSDate())]
-                : []),
-        ];
+        if (before) {
+            whereConditions.push(
+                lt(
+                    messagesSchema.createdAt,
+                    DateTime.fromMillis(before).toJSDate()
+                )
+            );
+        }
+
+        if (after) {
+            whereConditions.push(
+                gt(
+                    messagesSchema.createdAt,
+                    DateTime.fromMillis(after).toJSDate()
+                )
+            );
+        }
 
         const messages = await db.query.messages.findMany({
             where: and(...whereConditions),

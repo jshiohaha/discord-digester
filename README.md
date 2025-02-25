@@ -40,10 +40,6 @@ Discord Digester is a tool that extracts, stores, and makes Discord content easi
 -   Backfill messages from allowed channels
 -   Get messages from a channel
 
-### Future work
-
--   Use an archiver process to move completed conversations into a read-only archive, like arweave
-
 # API Reference
 
 📣 If you just want to get rolling and read later, here is an endpoint that will return the last 10 messages from propsosal 3
@@ -84,8 +80,12 @@ The query parameters allow you to filter the messages by date and limit the numb
 
 **Query Parameters:**
 
--   `before` (optional): Epoch timestamp to filter messages before
--   `after` (optional): Epoch timestamp to filter messages after
+-   `before` (optional): Filter messages before this time point. Accepts either:
+    -   Epoch timestamp (milliseconds since Unix epoch)
+    -   ISO 8601 date string (e.g., "2023-04-15T14:30:00Z")
+-   `after` (optional): Filter messages after this time point. Accepts either:
+    -   Epoch timestamp (milliseconds since Unix epoch)
+    -   ISO 8601 date string (e.g., "2023-04-15T14:30:00Z")
 -   `limit` (optional): Maximum number of messages to return (default: 100)
 -   `sort` (optional): Sort direction, either "asc" or "desc" (default: "desc")
 
