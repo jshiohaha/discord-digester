@@ -10,6 +10,8 @@
 
 📹 Metadao hackathon demo [here](https://drive.google.com/file/d/1FhhMiLyX0gQEitR9TU9PpHvdE__zQYsk/view).
 
+🚧 I'm currently working on backfilling messages from past proposal channels. I've backfilled up to proposal #10 and will be backfillingthe rest soon
+
 # Motivation
 
 Futarchic markets are prediction markets used for governance decisions, where participants trade on the outcomes of different policy choices. These markets help organizations make better decisions by aggregating collective knowledge and creating financial incentives for accurate predictions.
