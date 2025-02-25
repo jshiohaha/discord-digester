@@ -1,19 +1,22 @@
 import {
+    AnyThreadChannel,
     ChannelType,
     ForumChannel,
     GuildBasedChannel,
     TextBasedChannel,
 } from "discord.js";
-import { and, asc, desc, eq, gt, lt } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, lt } from "drizzle-orm";
 import {
+    FastifyBaseLogger,
     FastifyInstance,
     FastifyPluginAsync,
     FastifyReply,
     FastifyRequest,
 } from "fastify";
+import { DateTime } from "luxon";
+import pRetry from "p-retry";
 import { z } from "zod";
 
-import { DateTime } from "luxon";
 import { fetchHistoricalMessages } from "../lib/discord/historical/text-channel";
 import { fetchHistoricalThreadBasedMessages } from "../lib/discord/historical/thread-channel";
 import { validateApiKey } from "../middleware/auth";
@@ -67,6 +70,10 @@ const BackfillMessagesRequestSchema = z.object({
         .string()
         .optional()
         .describe("Thread ID to backfill messages from"),
+    threads: z
+        .array(z.enum(["active", "archived"]))
+        .default(["active", "archived"])
+        .describe("Type of threads to backfill messages from"),
     maxRetries: z
         .number()
         .int()
@@ -132,11 +139,12 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
         reply: FastifyReply
     ): Promise<ApiResponse<{ processed: number }>> => {
         const { discordClient, db } = fastify.dependencies;
-        const { channelId, threadId, before, maxRetries } = wrappedParse(
-            BackfillMessagesRequestSchema,
-            request.body,
-            "backfill_messages::body"
-        );
+        const { channelId, threadId, threads, before, maxRetries } =
+            wrappedParse(
+                BackfillMessagesRequestSchema,
+                request.body,
+                "backfill_messages::body"
+            );
 
         const channel = await discordClient?.channels.fetch(channelId);
         if (!channel) {
@@ -174,38 +182,128 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
                 logger: fastify.log,
             });
         } else if (channel.type === ChannelType.GuildForum) {
-            if (!threadId) {
-                throw new Error(
-                    "Thread ID is required for forum based channels"
+            const processableThreads: AnyThreadChannel[] = [];
+            // if thread is provided, use it. else, fetch all threads in a channel.
+            if (threadId) {
+                const thread = await channel.threads.fetch(threadId);
+                if (thread) {
+                    processableThreads.push(thread);
+                } else {
+                    throw new Error(
+                        `Channel ${channel.id} does not have thread that matches the provided ID ${threadId}`
+                    );
+                }
+            } else {
+                const allThreads: AnyThreadChannel[] = [];
+                if (threads.includes("active")) {
+                    const activeThreads = await channel.threads.fetchActive();
+                    allThreads.push(...Object.values(activeThreads.threads));
+                }
+
+                if (threads.includes("archived")) {
+                    const archivedThreads = await fetchArchivedThreadsWithRetry(
+                        channel,
+                        {
+                            maxRetries: 3,
+                            logger: fastify.log,
+                        }
+                    );
+                    allThreads.push(...archivedThreads);
+                }
+
+                const threadIds = allThreads.map((x) => x.id);
+                const completedThreads = await db
+                    .select({
+                        threadId: threadBasedChannelCheckpointerSchema.threadId,
+                    })
+                    .from(threadBasedChannelCheckpointerSchema)
+                    .where(
+                        and(
+                            inArray(
+                                threadBasedChannelCheckpointerSchema.threadId,
+                                threadIds
+                            ),
+                            eq(
+                                threadBasedChannelCheckpointerSchema.status,
+                                "completed"
+                            )
+                        )
+                    )
+                    .then((x) =>
+                        x.map((x) => x.threadId).filter((x): x is string => !!x)
+                    );
+
+                processableThreads.push(
+                    ...allThreads.filter(
+                        (x) => !completedThreads.includes(x.id)
+                    )
                 );
             }
 
-            await db
-                .update(threadBasedChannelCheckpointerSchema)
-                .set({
-                    status: "in_progress",
-                })
-                .where(
-                    and(
-                        eq(
-                            threadBasedChannelCheckpointerSchema.channelId,
-                            channelId
-                        ),
-                        eq(threadBasedChannelCheckpointerSchema.threadId, ""),
-                        eq(
-                            threadBasedChannelCheckpointerSchema.status,
-                            "pending"
-                        )
-                    )
-                );
+            fastify.log.info(
+                `Found ${processableThreads.length} threads to process for channel ${channel.id}`
+            );
 
-            await fetchHistoricalThreadBasedMessages({
-                channel: channel as ForumChannel,
-                threadId,
-                before,
-                maxRetries,
-                logger: fastify.log,
-            });
+            for (const thread of processableThreads) {
+                fastify.log.info(`Start processing thread ${thread.id}`);
+
+                const threadCheckpoint =
+                    await db.query.threadBasedChannelCheckpointer.findFirst({
+                        where: and(
+                            eq(
+                                threadBasedChannelCheckpointerSchema.channelId,
+                                channelId
+                            ),
+                            eq(
+                                threadBasedChannelCheckpointerSchema.threadId,
+                                thread.id
+                            )
+                        ),
+                    });
+
+                if (!threadCheckpoint) {
+                    await db
+                        .insert(threadBasedChannelCheckpointerSchema)
+                        .values({
+                            channelId,
+                            threadId: thread.id,
+                            status: "pending",
+                            createdAt: DateTime.now().toJSDate(),
+                            updatedAt: DateTime.now().toJSDate(),
+                        });
+                }
+
+                await db
+                    .update(threadBasedChannelCheckpointerSchema)
+                    .set({
+                        status: "in_progress",
+                        updatedAt: DateTime.now().toJSDate(),
+                    })
+                    .where(
+                        and(
+                            eq(
+                                threadBasedChannelCheckpointerSchema.channelId,
+                                channelId
+                            ),
+                            eq(
+                                threadBasedChannelCheckpointerSchema.threadId,
+                                thread.id
+                            ),
+                            eq(
+                                threadBasedChannelCheckpointerSchema.status,
+                                "pending"
+                            )
+                        )
+                    );
+
+                await fetchHistoricalThreadBasedMessages({
+                    channel: channel as ForumChannel,
+                    threadId: thread.id,
+                    before,
+                    maxRetries,
+                    logger: fastify.log,
+                });
+            }
         } else {
             throw new Error(
                 `Channel ${channel.id} type ${channel.type} does not support messages`
@@ -306,4 +404,72 @@ export const messagesRoutes: FastifyPluginAsync = async (fastify) => {
         },
         handler: wrappedHandler(fastify)(handlers.getMessages),
     });
+};
+
+const fetchArchivedThreadsWithRetry = async (
+    channel: ForumChannel,
+    opts?: {
+        maxRetries?: number;
+        logger?: FastifyBaseLogger;
+    }
+): Promise<AnyThreadChannel[]> => {
+    const archivedThreads: AnyThreadChannel[] = [];
+    const maxRetries = opts?.maxRetries ?? 3;
+
+    let hasMore = true;
+    let fetchCount = 0;
+
+    while (hasMore) {
+        fetchCount++;
+
+        try {
+            const archived = await pRetry(
+                async () => {
+                    opts?.logger?.debug(
+                        `Fetching archived threads batch #${fetchCount}`
+                    );
+                    return await channel.threads.fetchArchived();
+                },
+                {
+                    retries: maxRetries,
+                    onFailedAttempt: (error) => {
+                        opts?.logger?.warn({
+                            msg: `Error fetching archived threads batch #${fetchCount}, attempt ${
+                                error.attemptNumber
+                            }/${error.retriesLeft + error.attemptNumber}`,
+                            error: error.message,
+                            channelId: channel.id,
+                        });
+                    },
+                    factor: 2,
+                    minTimeout: 1_000,
+                    maxTimeout: 10_000,
+                }
+            );
+
+            hasMore = archived.hasMore;
+            const batchThreads = Object.values(archived.threads);
+            archivedThreads.push(...batchThreads);
+            opts?.logger?.debug(
+                `Successfully fetched ${batchThreads.length} archived threads in batch #${fetchCount}`
+            );
+        } catch (error) {
+            const errorMessage =
+                error instanceof Error ? error.message : String(error);
+            opts?.logger?.error({
+                msg: `Failed to fetch archived threads batch #${fetchCount} after ${maxRetries} attempts`,
+                error: errorMessage,
+                channelId: channel.id,
+            });
+            throw new Error(
+                `Failed to fetch archived threads: ${errorMessage}`
+            );
+        }
+    }
+
+    opts?.logger?.debug(
+        `Completed fetching all archived threads, found ${archivedThreads.length} threads`
+    );
+
+    return archivedThreads;
 };
