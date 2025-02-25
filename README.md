@@ -46,6 +46,10 @@ Discord Digester is a tool that extracts, stores, and makes Discord content easi
 
 # API Reference
 
+📣 If you just want to get rolling and read later, here is an endpoint that will return the last 10 messages from propsosal 3
+
+`https://discord-digester-production.up.railway.app/api/v1/messages/1199177850109046868?limit=10&sort=desc`
+
 The Discord Digester API provides several endpoints to manage channels and retrieve messages. Some endpoints require API key authentication, which should be provided in the request headers.
 
 The API is currently hosted on railway and is available at `https://discord-digester-production.up.railway.app`.
