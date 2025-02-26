@@ -210,6 +210,7 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
             }
         );
     },
+
     backfillMessages: async (
         request: FastifyRequest,
         reply: FastifyReply

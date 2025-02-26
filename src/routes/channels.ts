@@ -1,4 +1,4 @@
-import { NonThreadGuildBasedChannel } from "discord.js";
+import { Channel, ChannelType, NonThreadGuildBasedChannel } from "discord.js";
 import { and, eq, ilike, inArray } from "drizzle-orm";
 import {
     FastifyInstance,
@@ -86,6 +86,36 @@ const getGuildChannels = async (
 };
 
 const createChannelHandlers = (fastify: FastifyInstance) => ({
+    setupMessageListener: async () => {
+        const { discordClient, db } = fastify.dependencies;
+
+        discordClient?.on("channelCreate", async (channel: Channel) => {
+            const guild = discordClient?.guilds.cache.first();
+            if (!guild) {
+                return;
+            }
+
+            // only auto-approve public text channels for now
+            if (
+                channel.isTextBased() &&
+                channel.type === ChannelType.GuildText
+            ) {
+                const isPublic = isPublicChannel(channel, guild);
+                if (isPublic) {
+                    await db.insert(channelsSchema).values({
+                        channelId: channel.id,
+                        createdAt: channel.createdAt,
+                        name: channel.name,
+                        isPublic,
+                        type: channel.type.toString().toLowerCase().trim(),
+                        allowed: false,
+                        parentId: channel.parentId,
+                    });
+                }
+            }
+        });
+    },
+
     listGuildChannels: async (
         request: FastifyRequest,
         reply: FastifyReply
