@@ -10,8 +10,6 @@
 
 📹 Metadao hackathon demo [here](https://drive.google.com/file/d/1FhhMiLyX0gQEitR9TU9PpHvdE__zQYsk/view).
 
-🚧 I'm currently working on backfilling messages from past proposal channels. I've backfilled up to proposal #10 and will be backfillingthe rest soon
-
 # Motivation
 
 Futarchic markets are prediction markets used for governance decisions, where participants trade on the outcomes of different policy choices. These markets help organizations make better decisions by aggregating collective knowledge and creating financial incentives for accurate predictions.
@@ -41,6 +39,10 @@ Discord Digester is a tool that extracts, stores, and makes Discord content easi
 -   Add and remove channels from an allowlist that dictates which messages are synced
 -   Backfill messages from allowed channels
 -   Get messages from a channel
+
+# Stats
+
+Check out this [README](./stats/README.md) for some stats on the data that Discord Digester has collected.
 
 # API Reference
 
@@ -372,6 +374,7 @@ With Docker:
 
 ```bash
 docker run -p 3000:3000 \
+    -e PORT=3000 \
     -e DATABASE_URL=<DATABASE_URL> \
     -e NODE_ENV=<NODE_ENV> \
     -e LOG_LEVEL=<LOG_LEVEL> \
