@@ -4,6 +4,7 @@ import {
     ForumChannel,
     GuildBasedChannel,
     Message,
+    PartialMessage,
     TextBasedChannel,
 } from "discord.js";
 import { and, asc, desc, eq, gt, inArray, lt } from "drizzle-orm";
@@ -145,6 +146,7 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
     setupMessageListener: async () => {
         const { discordClient, db } = fastify.dependencies;
 
+        // https://discord.js.org/docs/packages/discord.js/14.18.0/Client:Class#messageCreate
         discordClient?.on("messageCreate", async (message: Message) => {
             // sample incoming events at a rate of 25%
             if (Math.random() < 0.25) {
@@ -193,8 +195,21 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
                 );
             }
         });
-    },
 
+        // https://discord.js.org/docs/packages/discord.js/14.18.0/Client:Class#messageDelete
+        discordClient?.on(
+            "messageDelete",
+            async (message: Message | PartialMessage) => {
+                fastify.log.debug(
+                    {
+                        messageId: message.id,
+                        channelId: message.channelId,
+                    },
+                    "[event=messageDelete]"
+                );
+            }
+        );
+    },
     backfillMessages: async (
         request: FastifyRequest,
         reply: FastifyReply
