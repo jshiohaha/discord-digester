@@ -1,21 +1,14 @@
-import {
-    Collection,
-    GuildBasedChannel,
-    Message,
-    TextBasedChannel,
-} from "discord.js";
+import { GuildBasedChannel, TextBasedChannel } from "discord.js";
 import { eq } from "drizzle-orm";
 import { DateTime } from "luxon";
-import pRetry from "p-retry";
 import { z } from "zod";
 
 import { FastifyBaseLogger } from "fastify";
 import { db } from "../../../db";
 import { wrappedParse } from "../../../routes/utils";
 import { textBasedChannelCheckpointer as textBasedChannelCheckpointerSchema } from "../../../schema/checkpointer";
-import { messages as messagesSchema } from "../../../schema/messages";
-import { Nullish } from "../../../types/index";
 import { handleRateLimitError } from "../error";
+import { handleMessagesWithRetry } from "./utils";
 
 const getTextBasedChannelCheckpoint = async (
     channelId: string
@@ -111,8 +104,10 @@ export const fetchHistoricalMessages = async (
 
     while (true) {
         try {
-            const messages = await channel.messages.fetch(fetchOptions);
-            if (messages.size === 0) {
+            const messages = await channel.messages
+                .fetch(fetchOptions)
+                .then((x) => Array.from(x.values()));
+            if (messages.length === 0) {
                 await markBackfillComplete(channel.id).then(() => {
                     logger?.info("Backfill complete");
                 });
@@ -125,7 +120,7 @@ export const fetchHistoricalMessages = async (
             });
 
             // update checkpoint with the oldest (i.e. last) message from this batch
-            const oldestMessage = messages.last();
+            const oldestMessage = messages[messages.length - 1];
             if (oldestMessage) {
                 await updateTextBasedChannelCheckpoint(
                     channel.id,
@@ -167,50 +162,4 @@ export const fetchHistoricalMessages = async (
             }
         }
     }
-};
-
-const handleMessages = async (
-    messages: Collection<string, Message>,
-    opts?: { logger?: Nullish<FastifyBaseLogger> }
-) => {
-    const values = messages.map((message) => ({
-        messageId: message.id,
-        guildId: message.guildId,
-        channelId: message.channelId,
-        createdAt: message.createdAt,
-        content: message.cleanContent,
-        threadId: message.thread?.id ?? null,
-        threadParentChannelId: message.thread?.parentId ?? null,
-        replyTo: message.reference?.messageId,
-        author: message.author.toJSON(),
-        raw: message.toJSON(),
-    }));
-
-    if (values.length > 0) {
-        opts?.logger?.info(`Inserting ${values.length} messages`);
-        await db
-            .insert(messagesSchema)
-            .values(values)
-            .onConflictDoNothing({
-                target: [messagesSchema.messageId],
-            });
-    } else {
-        opts?.logger?.info("No messages to insert");
-    }
-};
-
-const handleMessagesWithRetry = async (
-    messages: Collection<string, Message>,
-    opts?: { logger?: Nullish<FastifyBaseLogger>; batchInsertRetries?: number }
-) => {
-    await pRetry(async () => handleMessages(messages, opts), {
-        retries: opts?.batchInsertRetries ?? 3,
-        onFailedAttempt: (error) => {
-            opts?.logger?.warn(
-                `Batch insert attempt failed (attempt ${error.attemptNumber}/${
-                    error.retriesLeft + error.attemptNumber
-                }). ${error.message}`
-            );
-        },
-    });
 };

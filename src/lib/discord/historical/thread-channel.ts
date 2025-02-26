@@ -1,16 +1,15 @@
-import { ForumChannel, Message, ThreadChannel } from "discord.js";
+import { ForumChannel, ThreadChannel } from "discord.js";
 import { and, eq } from "drizzle-orm";
 import { DateTime } from "luxon";
-import pRetry from "p-retry";
 import { z } from "zod";
 
 import { FastifyBaseLogger } from "fastify";
 import { db } from "../../../db";
 import { wrappedParse } from "../../../routes/utils";
 import { threadBasedChannelCheckpointer as threadBasedChannelCheckpointerSchema } from "../../../schema/checkpointer";
-import { messages as messagesSchema } from "../../../schema/messages";
 import { Nullish } from "../../../types/index";
 import { handleRateLimitError } from "../error";
+import { handleMessagesWithRetry } from "./utils";
 
 const getLastCheckpoint = async (
     channelId: string,
@@ -60,52 +59,6 @@ const markBackfillComplete = async (channelId: string, threadId: string) => {
             )
         )
         .execute();
-};
-
-const handleMessages = async (
-    messages: Array<Message>,
-    opts?: { logger?: Nullish<FastifyBaseLogger> }
-) => {
-    const values = messages.map((message) => ({
-        messageId: message.id,
-        guildId: message.guildId,
-        channelId: message.channelId,
-        createdAt: message.createdAt,
-        content: message.cleanContent,
-        threadId: message.thread?.id ?? null,
-        threadParentChannelId: message.thread?.parentId ?? null,
-        replyTo: message.reference?.messageId,
-        author: message.author.toJSON(),
-        raw: message.toJSON(),
-    }));
-
-    if (values.length > 0) {
-        opts?.logger?.info(`Inserting ${values.length} messages`);
-        await db
-            .insert(messagesSchema)
-            .values(values)
-            .onConflictDoNothing({
-                target: [messagesSchema.messageId],
-            });
-    } else {
-        opts?.logger?.info("No messages to insert");
-    }
-};
-
-const handleMessagesWithRetry = async (
-    messages: Array<Message>,
-    opts?: { logger?: Nullish<FastifyBaseLogger>; batchInsertRetries?: number }
-) => {
-    await pRetry(async () => handleMessages(messages, opts), {
-        retries: opts?.batchInsertRetries ?? 3,
-        onFailedAttempt: (error) => {
-            opts?.logger?.warn(
-                `Batch insert attempt failed (attempt ${error.attemptNumber}/${
-                    error.retriesLeft + error.attemptNumber
-                }). ${error.message}`
-            );
-        },
-    });
 };
 
 const fetchThreadMessages = async (

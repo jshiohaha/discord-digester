@@ -3,6 +3,7 @@ import {
     ChannelType,
     ForumChannel,
     GuildBasedChannel,
+    Message,
     TextBasedChannel,
 } from "discord.js";
 import { and, asc, desc, eq, gt, inArray, lt } from "drizzle-orm";
@@ -19,6 +20,7 @@ import { z } from "zod";
 
 import { fetchHistoricalMessages } from "../lib/discord/historical/text-channel";
 import { fetchHistoricalThreadBasedMessages } from "../lib/discord/historical/thread-channel";
+import { mapMessageToRecordSchema } from "../lib/discord/historical/utils";
 import { validateApiKey } from "../middleware/auth";
 import { channels as channelsSchema } from "../schema/channels";
 import {
@@ -140,55 +142,58 @@ const BackfillMessagesRequestSchema = z.object({
 });
 
 const createMessagesHandlers = (fastify: FastifyInstance) => ({
-    // setupMessageListener: async () => {
-    //     const { discordClient, db } = fastify.dependencies;
+    setupMessageListener: async () => {
+        const { discordClient, db } = fastify.dependencies;
 
-    //     discordClient?.on("messageCreate", async (message: Message) => {
-    //         if (message.author.bot || !message.inGuild()) return;
+        discordClient?.on("messageCreate", async (message: Message) => {
+            // sample incoming events at a rate of 25%
+            if (Math.random() < 0.25) {
+                fastify.log.debug(
+                    {
+                        messageId: message.id,
+                        channelId: message.channelId,
+                    },
+                    "[event=messageCreate]"
+                );
+            }
 
-    //         const allowedChannel = await db.query.channels.findFirst({
-    //             where: eq(channelsSchema.channel_id, message.channelId),
-    //         });
+            if (message.author.bot || !message.inGuild()) {
+                return;
+            }
 
-    //         if (!allowedChannel) return;
+            const allowedChannel = await db.query.channels.findFirst({
+                where: and(
+                    eq(channelsSchema.channelId, message.channelId),
+                    eq(channelsSchema.allowed, true)
+                ),
+            });
 
-    //         try {
-    //             fastify.log.info({
-    //                 msg: "Processing message",
-    //                 messageId: message.id,
-    //                 channelId: message.channelId,
-    //             });
+            if (!allowedChannel) {
+                return;
+            }
 
-    //             await db
-    //                 .insert(messagesSchema)
-    //                 .values({
-    //                     messageId: message.id,
-    //                     channelId: message.channelId,
-    //                     content: message.content,
-    //                     createdAt: DateTime.now().toJSDate(),
-    //                     replyTo: message.reference?.messageId,
-    //                     // thread
-    //                     threadId: message.thread?.id,
-    //                     threadParentChannelId: message.thread?.parentId,
-    //                     threadName: message.thread?.name,
-    //                     // author
-    //                     authorId: message.author.id,
-    //                     authorUsername: message.author.username,
-    //                     authorAvatarUrl: message.author.displayAvatarURL(),
-    //                     authorIsBot: message.author.bot,
-    //                     authorIsSystem: message.author.system,
-    //                 })
-    //                 .returning();
-    //         } catch (error) {
-    //             fastify.log.error({
-    //                 msg: "Failed to process message",
-    //                 messageId: message.id,
-    //                 error:
-    //                     error instanceof Error ? error.message : String(error),
-    //             });
-    //         }
-    //     });
-    // },
+            try {
+                await db
+                    .insert(messagesSchema)
+                    .values(mapMessageToRecordSchema(message))
+                    .onConflictDoNothing({
+                        target: messagesSchema.messageId,
+                    });
+            } catch (error) {
+                fastify.log.error(
+                    {
+                        channelId: message.channelId,
+                        messageId: message.id,
+                        error:
+                            error instanceof Error
+                                ? error.message
+                                : String(error),
+                    },
+                    "[event=messageCreate] Failed to process message"
+                );
+            }
+        });
+    },
 
     backfillMessages: async (
         request: FastifyRequest,
@@ -441,7 +446,7 @@ export const messagesRoutes: FastifyPluginAsync = async (fastify) => {
     const handlers = createMessagesHandlers(fastify);
 
     // initialize message listener when routes are registered
-    // await handlers.setupMessageListener();
+    await handlers.setupMessageListener();
 
     fastify.post("/messages/backfill", {
         preHandler: validateApiKey,
