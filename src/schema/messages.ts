@@ -1,3 +1,4 @@
+import { relations } from "drizzle-orm";
 import {
     index,
     jsonb,
@@ -33,10 +34,9 @@ export const messages = pgTable(
     })
 );
 
-// todo: does this exist?
-// export const replyToRelation = relations(messages, ({ one }) => ({
-//     replyTo: one(messages, {
-//         fields: [messages.replyTo],
-//         references: [messages.messageId],
-//     }),
-// }));
+export const replyToRelation = relations(messages, ({ one }) => ({
+    replyTo: one(messages, {
+        fields: [messages.replyTo],
+        references: [messages.messageId],
+    }),
+}));
