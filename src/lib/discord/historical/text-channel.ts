@@ -1,5 +1,5 @@
 import { GuildBasedChannel, TextBasedChannel } from "discord.js";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { DateTime } from "luxon";
 import { z } from "zod";
 
@@ -7,8 +7,23 @@ import { FastifyBaseLogger } from "fastify";
 import { db } from "../../../db";
 import { wrappedParse } from "../../../routes/utils";
 import { textBasedChannelCheckpointer as textBasedChannelCheckpointerSchema } from "../../../schema/checkpointer";
+import { messages } from "../../../schema/messages";
 import { handleRateLimitError } from "../error";
 import { handleMessagesWithRetry } from "./utils";
+
+const getEarliestMessageForChannel = async (
+    channelId: string
+): Promise<string | null> => {
+    const rows = await db
+        .select()
+        .from(messages)
+        .where(eq(messages.channelId, channelId))
+        .orderBy(asc(messages.createdAt))
+        .limit(1)
+        .execute();
+
+    return rows[0]?.messageId ?? null;
+};
 
 const getTextBasedChannelCheckpoint = async (
     channelId: string
@@ -92,7 +107,7 @@ export const fetchHistoricalMessages = async (
     // default is discord max
     const perRequestFetchLimit = perRequestFetchLimitArg ?? 100;
     let lastMessageId =
-        beforeArg ?? (await getTextBasedChannelCheckpoint(channel.id));
+        beforeArg ?? (await getEarliestMessageForChannel(channel.id));
     let retries = 0;
 
     let fetchOptions: { limit: number; before?: string } = {
