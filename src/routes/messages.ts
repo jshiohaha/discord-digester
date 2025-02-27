@@ -123,16 +123,16 @@ const MessagesResponseSchema = z.object({
  * - fetch historical threads from a channel
  * - fetch historical messages from a thread
  */
-const BackfillMessagesRequestSchema = z.object({
-    channelId: z.string().describe("Channel ID to backfill messages from"),
+const IndexMessagesRequestSchema = z.object({
+    channelId: z.string().describe("Channel ID to index messages from"),
     threadId: z
         .string()
         .optional()
-        .describe("Thread ID to backfill messages from"),
+        .describe("Thread ID to index messages from"),
     threads: z
         .array(z.enum(["active", "archived"]))
         .default(["active", "archived"])
-        .describe("Type of threads to backfill messages from"),
+        .describe("Type of threads to index messages from"),
     maxRetries: z
         .number()
         .int()
@@ -211,16 +211,19 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
         );
     },
 
-    backfillMessages: async (
+    /**
+     * todo: add a direction to the index - forward or backward
+     */
+    indexMessages: async (
         request: FastifyRequest,
         reply: FastifyReply
     ): Promise<ApiResponse<{ processed: number }>> => {
         const { discordClient, db } = fastify.dependencies;
         const { channelId, threadId, threads, before, maxRetries } =
             wrappedParse(
-                BackfillMessagesRequestSchema,
+                IndexMessagesRequestSchema,
                 request.body,
-                "backfill_messages::body"
+                "index_messages::body"
             );
 
         const channel = await discordClient?.channels.fetch(channelId);
@@ -464,16 +467,16 @@ export const messagesRoutes: FastifyPluginAsync = async (fastify) => {
     // initialize message listener when routes are registered
     await handlers.setupMessageListener();
 
-    fastify.post("/messages/backfill", {
+    fastify.post("/messages/index", {
         preHandler: validateApiKey,
         schema: {
-            body: BackfillMessagesRequestSchema,
+            body: IndexMessagesRequestSchema,
             response: {
                 200: ApiResponseSchema(z.void()),
                 400: z.object({ error: z.string() }),
             },
         },
-        handler: wrappedHandler(fastify)(handlers.backfillMessages),
+        handler: wrappedHandler(fastify)(handlers.indexMessages),
     });
 
     // GET /messages/:channelId
