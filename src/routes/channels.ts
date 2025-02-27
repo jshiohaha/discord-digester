@@ -46,9 +46,23 @@ const GuildChannelResponseSchema = z.custom<NonThreadGuildBasedChannel>();
 
 type GuildChannelResponse = z.infer<typeof GuildChannelResponseSchema>;
 
+const BooleanQueryStringSchema = z
+    .string()
+    .optional()
+    .transform((val) => {
+        if (val === undefined) return undefined;
+        return val.toLowerCase() === "true"
+            ? true
+            : val.toLowerCase() === "false"
+            ? false
+            : undefined;
+    });
+
 const ListChannelsRequestQuerySchema = z
     .object({
         name: z.string().optional(),
+        allowed: BooleanQueryStringSchema,
+        public: BooleanQueryStringSchema,
     })
     .transform((data) => ({
         ...data,
@@ -192,7 +206,11 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
     ): Promise<ApiResponse<z.infer<typeof ChannelsResponseSchema>>> => {
         const { db } = fastify.dependencies;
 
-        const { name } = wrappedParse(
+        const {
+            name,
+            allowed,
+            public: isPublic,
+        } = wrappedParse(
             ListChannelsRequestQuerySchema,
             request.query,
             "list_channels::query_params"
@@ -201,6 +219,14 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
         const whereConditions = [];
         if (name) {
             whereConditions.push(ilike(channelsSchema.name, `%${name}%`));
+        }
+
+        if (allowed !== undefined) {
+            whereConditions.push(eq(channelsSchema.allowed, allowed));
+        }
+
+        if (isPublic !== undefined) {
+            whereConditions.push(eq(channelsSchema.isPublic, isPublic));
         }
 
         const whereClause =
