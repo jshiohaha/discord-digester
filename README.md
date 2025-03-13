@@ -46,9 +46,15 @@ Check out this [README](./stats/README.md) for some stats on the data that Disco
 
 # API Reference
 
-📣 If you just want to get rolling and read later, here is an endpoint that will return the last 10 messages from propsosal 3
+📣 If you just want to get rolling and dive deeper later, here are a few helpful endpoints:
 
-`https://discord-digester-production.up.railway.app/api/v1/messages/1199177850109046868?limit=10&sort=desc`
+-   Get indexed channels, from which you can get historical messages (as shown below)
+
+    > 🔗 https://discord-digester-production.up.railway.app/api/v1/channels/allowed
+
+-   return the last 10 messages from propsosal 3
+
+    > 🔗 https://discord-digester-production.up.railway.app/api/v1/messages/1199177850109046868?limit=10&sort=desc
 
 The Discord Digester API provides several endpoints to manage channels and retrieve messages. Some endpoints require API key authentication, which should be provided in the request headers.
 
