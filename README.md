@@ -35,7 +35,7 @@ Discord Digester is a tool that extracts, stores, and makes Discord content easi
 
 ### Features
 
--   Sync discord channels to a postgres database
+-   Sync public discord channels to a postgres database. Restricted channels, like [#cyberlounge](https://discord.com/channels/1155877543174475859/1155877543874932868) are currently not accessible by the bot.
 -   Add and remove channels from an allowlist that dictates which messages are synced
 -   Backfill messages from allowed channels
 -   Get messages from a channel
