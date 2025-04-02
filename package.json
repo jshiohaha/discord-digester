@@ -1,6 +1,6 @@
 {
     "type": "module",
-    "name": "discord-bot",
+    "name": "discord-digester",
     "version": "1.0.0",
     "description": "",
     "main": "dist/index.js",
