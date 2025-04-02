@@ -1,12 +1,14 @@
 CREATE TABLE IF NOT EXISTS "channels" (
 	"id" serial PRIMARY KEY NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"channel_id" varchar(64) NOT NULL,
+	"created_at" timestamp,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	"guild_id" text NOT NULL,
+	"channel_id" text NOT NULL,
 	"name" text NOT NULL,
 	"is_public" boolean NOT NULL,
 	"allowed" boolean DEFAULT false NOT NULL,
 	"type" text NOT NULL,
-	CONSTRAINT "channels_channel_id_unique" UNIQUE("channel_id")
+	"parent_id" text
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "text_based_channel_checkpoint" (
@@ -27,24 +29,38 @@ CREATE TABLE IF NOT EXISTS "thread_based_channel_checkpoint" (
 	"finished_at" timestamp
 );
 --> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "guilds" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"created_at" timestamp NOT NULL,
+	"added_at" timestamp DEFAULT now() NOT NULL,
+	"guild_id" text NOT NULL,
+	"name" text NOT NULL,
+	"icon_url" text,
+	"active" boolean DEFAULT true NOT NULL,
+	"raw" jsonb,
+	CONSTRAINT "guilds_guild_id_unique" UNIQUE("guild_id")
+);
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "messages" (
 	"id" serial PRIMARY KEY NOT NULL,
-	"message_id" text NOT NULL,
+	"created_at" timestamp NOT NULL,
+	"guild_id" text NOT NULL,
 	"channel_id" text NOT NULL,
-	"created_at" timestamp DEFAULT now() NOT NULL,
-	"content" text,
-	"reply_to" text,
 	"thread_id" text,
 	"thread_parent_channel_id" text,
-	"thread_name" text,
-	"author_id" text NOT NULL,
-	"author_username" text NOT NULL,
-	"author_avatar_url" text,
-	"author_is_bot" boolean DEFAULT false NOT NULL,
-	"author_is_system" boolean DEFAULT false NOT NULL,
+	"message_id" text NOT NULL,
+	"content" text,
+	"reply_to" text,
+	"author" jsonb NOT NULL,
+	"raw" jsonb NOT NULL,
 	CONSTRAINT "messages_message_id_unique" UNIQUE("message_id")
 );
 --> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_channel_id" ON "channels" ("channel_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_channels_guild_id" ON "channels" ("guild_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_unique_channel_guild" ON "channels" ("channel_id","guild_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_guild_id" ON "guilds" ("guild_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_channel" ON "messages" ("channel_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_guild" ON "messages" ("guild_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_thread" ON "messages" ("thread_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_thread_parent" ON "messages" ("thread_parent_channel_id");

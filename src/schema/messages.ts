@@ -7,6 +7,8 @@ import {
     text,
     timestamp,
 } from "drizzle-orm/pg-core";
+import { channels } from "./channels";
+import { guilds } from "./guilds";
 
 export const messages = pgTable(
     "messages",
@@ -14,7 +16,7 @@ export const messages = pgTable(
         id: serial("id").primaryKey(),
         // this is the actual message creation timestamp
         createdAt: timestamp("created_at").notNull(),
-        guildId: text("guild_id"),
+        guildId: text("guild_id").notNull(),
         channelId: text("channel_id").notNull(),
         threadId: text("thread_id"),
         threadParentChannelId: text("thread_parent_channel_id"),
@@ -27,6 +29,7 @@ export const messages = pgTable(
     },
     (table) => ({
         channelIdx: index("idx_channel").on(table.channelId),
+        guildIdx: index("idx_guild").on(table.guildId),
         threadIdx: index("idx_thread").on(table.threadId),
         threadParentIdx: index("idx_thread_parent").on(
             table.threadParentChannelId
@@ -34,9 +37,17 @@ export const messages = pgTable(
     })
 );
 
-export const replyToRelation = relations(messages, ({ one }) => ({
+export const messagesRelations = relations(messages, ({ one }) => ({
     replyTo: one(messages, {
         fields: [messages.replyTo],
         references: [messages.messageId],
+    }),
+    guild: one(guilds, {
+        fields: [messages.guildId],
+        references: [guilds.guildId],
+    }),
+    channel: one(channels, {
+        fields: [messages.channelId, messages.guildId],
+        references: [channels.channelId, channels.guildId],
     }),
 }));

@@ -1,1 +1,0 @@
-ALTER TABLE "channels" ADD COLUMN "parent_id" varchar(64);

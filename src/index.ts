@@ -2,7 +2,9 @@ import { config } from "dotenv";
 
 config();
 
-import { Client, GatewayIntentBits } from "discord.js";
+import fastifyCookie from "@fastify/cookie";
+import fastifySession from "@fastify/session";
+import { Client, GatewayIntentBits, Guild } from "discord.js";
 import Fastify from "fastify";
 import {
     hasZodFastifySchemaValidationErrors,
@@ -15,6 +17,8 @@ import { client, connectDB, db, disconnectDB } from "./db";
 import { EnvConfig } from "./env";
 import { channelRoutes } from "./routes/channels";
 import { messagesRoutes } from "./routes/messages";
+import { authRoutes } from "./routes/oauth";
+import { guilds } from "./schema/guilds";
 
 const ChannelResponseSchema = z.object({
     channel_id: z.string(),
@@ -118,6 +122,8 @@ const start = async () => {
         fastify.get("/health", async () => ({ status: "ok" }));
 
         try {
+            await connectDB({ logger: fastify.log });
+
             const discordClient = new Client({
                 intents: [
                     GatewayIntentBits.Guilds,
@@ -130,37 +136,71 @@ const start = async () => {
                 fastify.log.error(error, "Discord client error");
             });
 
-            await discordClient.login(EnvConfig.DISCORD_BOT_TOKEN).then(() => {
-                fastify.log.info("Discord client initialized ✅");
+            discordClient.on("guildCreate", async (guild: Guild) => {
+                await fastify.dependencies.db
+                    .insert(guilds)
+                    .values({
+                        guildId: guild.id,
+                        createdAt: guild.createdAt,
+                        name: guild.name,
+                        iconUrl: guild.iconURL(),
+                        active: true,
+                        raw: guild.toJSON(),
+                    })
+                    .onConflictDoNothing({
+                        target: guilds.guildId,
+                    })
+                    .returning()
+                    .then((guilds) => {
+                        fastify.log.info(
+                            guilds.map((g) => g.guildId).join(", "),
+                            `Joined ${guilds.length} new guild`
+                        );
+                    })
+                    .catch((error) => {
+                        fastify.log.error(error, "Failed to join guild");
+                    });
             });
 
-            await connectDB({ logger: fastify.log });
+            try {
+                await discordClient.login(EnvConfig.DISCORD_BOT_TOKEN);
+                fastify.log.info("Discord client initialized ✅");
+            } catch (error) {
+                fastify.log.error(error, "Failed to initialize Discord client");
+                throw error;
+            }
 
             fastify.decorate("dependencies", {
                 db,
                 client,
                 discordClient,
             });
-
-            /**
-             * note: can create a debugging hook like this
-             *
-             *  fastify.addHook("onRequest", (request, reply, done) => {
-             *      fastify.log.info("Request dependencies defined?", {
-             *          db: db === undefined,
-             *          discordClient: discordClient === undefined,
-             *      });
-             *
-             *      done();
-             *  });
-             */
         } catch (error) {
             fastify.log.error(error, "Failed to initialize dependencies");
             throw error;
         }
 
+        // await fastify.register(rateLimitPlugin);
+
+        // await fastify.register(cachePlugin, {
+        //     ttl: EnvConfig.REDIS_CACHE_TTL,
+        //     keyPrefix: "discord-digester:",
+        //     methods: ["GET"],
+        // });
+
+        fastify.register(fastifyCookie);
+        fastify.register(fastifySession, {
+            secret: EnvConfig.SESSION_SECRET,
+            cookie: {
+                secure: process.env.NODE_ENV === "production",
+                httpOnly: true,
+                maxAge: 7 * 24 * 3_600 * 1_000,
+            },
+        });
+
         await fastify.register(channelRoutes, { prefix: "/api/v1" });
         await fastify.register(messagesRoutes, { prefix: "/api/v1" });
+        await fastify.register(authRoutes);
         fastify.log.info("Plugins registered successfully");
 
         fastify.log.info("Serving traffic...");
@@ -175,7 +215,8 @@ const start = async () => {
             try {
                 await fastify.close();
                 await disconnectDB();
-                await fastify.dependencies.discordClient?.destroy();
+                await fastify.dependencies.discordClient.destroy();
+
                 process.exit(0);
             } catch (err) {
                 fastify.log.error(err, "Error during shutdown");
@@ -200,7 +241,10 @@ declare module "fastify" {
         dependencies: {
             db: typeof db;
             client: typeof client;
-            discordClient?: Client;
+            discordClient: Client;
         };
+    }
+    interface Session {
+        oauthState?: string;
     }
 }

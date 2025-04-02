@@ -384,6 +384,5 @@ docker run -p 3000:3000 \
     -e DATABASE_URL=<DATABASE_URL> \
     -e NODE_ENV=<NODE_ENV> \
     -e LOG_LEVEL=<LOG_LEVEL> \
-    -e DISCORD_BOT_TOKEN=<DISCORD_BOT_TOKEN> \
     discord-digester
 ```

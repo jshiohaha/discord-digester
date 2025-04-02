@@ -5,14 +5,19 @@ config();
 
 const EnvConfigSchema = z
     .object({
+        DISCORD_CLIENT_ID: z.string().trim(),
+        DISCORD_CLIENT_SECRET: z.string().trim(),
+        DISCORD_REDIRECT_URI: z.string().trim(),
         DISCORD_BOT_TOKEN: z.string().trim(),
         NODE_ENV: z.enum(["local", "development", "production"]),
-        TELEGRAM_ALERT_CHAT_ID: z.string().trim().optional(),
-        TELEGRAM_BOT_TOKEN: z.string().trim().optional(),
+        // TELEGRAM_ALERT_CHAT_ID: z.string().trim().optional(),
+        // TELEGRAM_BOT_TOKEN: z.string().trim().optional(),
         LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]),
         PORT: z.string().trim().optional().default("3000"),
         DATABASE_URL: z.string().trim(),
         API_KEY: z.string().optional(),
+        JWT_SECRET: z.string().trim(),
+        SESSION_SECRET: z.string().trim(),
     })
     .transform((env) => ({
         ...env,

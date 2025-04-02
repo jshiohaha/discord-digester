@@ -10,6 +10,7 @@ import {
     textBasedChannelCheckpointer,
     threadBasedChannelCheckpointer,
 } from "./schema/checkpointer";
+import { guilds } from "./schema/guilds";
 import { messages } from "./schema/messages";
 
 const pool = new Pool({
@@ -23,6 +24,7 @@ const db = drizzle(pool, {
         messages,
         textBasedChannelCheckpointer,
         threadBasedChannelCheckpointer,
+        guilds,
     },
     logger: isDevelopment(),
 });

@@ -1,31 +1,18 @@
-import { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import {
+    FastifyInstance,
+    FastifyReply,
+    FastifyRequest,
+    RouteGenericInterface,
+} from "fastify";
 import { z } from "zod";
 
-// export const wrappedHandler =
-//     (fastify: FastifyInstance) =>
-//     <T>(
-//         handler: (
-//             request: FastifyRequest,
-//             reply: FastifyReply
-//         ) => Promise<ApiResponse<T>>
-//     ) =>
-//     async (request: FastifyRequest, reply: FastifyReply) => {
-//         try {
-//             const response = await handler(request, reply);
-//             return reply.status(response.status).send(response);
-//         } catch (error) {
-//             fastify.log.error(error);
-//             return reply.status(500).send({
-//                 status: 500,
-//                 error: "Failed to process request",
-//             });
-//         }
-//     };
-
+// Generic version of wrappedHandler that can be used with specific request types
 export const wrappedHandler =
     (fastify: FastifyInstance) =>
-    (handler: (req: FastifyRequest, reply: FastifyReply) => Promise<any>) =>
-    async (req: FastifyRequest, reply: FastifyReply) => {
+    <T extends RouteGenericInterface = RouteGenericInterface, R = any>(
+        handler: (req: FastifyRequest<T>, reply: FastifyReply) => Promise<R>
+    ) =>
+    async (req: FastifyRequest<T>, reply: FastifyReply) => {
         try {
             return await handler(req, reply);
         } catch (error) {

@@ -1,5 +1,5 @@
 import { Channel, ChannelType, NonThreadGuildBasedChannel } from "discord.js";
-import { and, eq, ilike, inArray } from "drizzle-orm";
+import { and, eq, ilike } from "drizzle-orm";
 import {
     FastifyInstance,
     FastifyPluginAsync,
@@ -19,15 +19,26 @@ import {
 import { wrappedHandler, wrappedParse } from "./utils";
 
 const AddChannelToAllowlistRequestSchema = z.object({
-    ids: z.array(z.string()).min(1, "Must provide at least one channel id"),
+    channelId: z.string().min(1, "Channel ID is required"),
+    guildId: z.string().min(1, "Guild ID is required"),
 });
 
 const RemoveChannelFromAllowlistRequestSchema = z.object({
-    ids: z.array(z.string()).min(1, "Must provide at least one channel id"),
+    channelId: z.string().min(1, "Channel ID is required"),
+    guildId: z.string().min(1, "Guild ID is required"),
+});
+
+const ListGuildChannelsRequestSchema = z.object({
+    guildId: z.string().min(1, "Guild ID is required"),
+});
+
+const SyncChannelsRequestSchema = z.object({
+    guildId: z.string().min(1, "Guild ID is required"),
 });
 
 const ChannelResponseSchema = z.object({
     channelId: z.string(),
+    guildId: z.string(),
     name: z.string(),
     updatedAt: z.date(),
     isPublic: z.boolean(),
@@ -39,12 +50,8 @@ const ChannelResponseSchema = z.object({
 const ChannelsResponseSchema = z.array(ChannelResponseSchema);
 
 const SyncChannelsResponseSchema = z.object({
-    newChannelCount: z.number(),
+    syncedChannelCount: z.number(),
 });
-
-const GuildChannelResponseSchema = z.custom<NonThreadGuildBasedChannel>();
-
-type GuildChannelResponse = z.infer<typeof GuildChannelResponseSchema>;
 
 const BooleanQueryStringSchema = z
     .string()
@@ -58,8 +65,9 @@ const BooleanQueryStringSchema = z
             : undefined;
     });
 
-const ListChannelsRequestQuerySchema = z
+const ListChannelsWithGuildQuerySchema = z
     .object({
+        guildId: z.string(),
         name: z.string().optional(),
         allowed: BooleanQueryStringSchema,
         public: BooleanQueryStringSchema,
@@ -70,14 +78,24 @@ const ListChannelsRequestQuerySchema = z
     }));
 
 const getGuildChannels = async (
-    fastify: FastifyInstance
+    fastify: FastifyInstance,
+    guildId?: string
 ): Promise<(NonThreadGuildBasedChannel & { is_public: boolean })[]> => {
     try {
-        const guild = fastify.dependencies.discordClient?.guilds.cache.first();
-        fastify.log.info("guild", guild?.id);
+        let guild;
+
+        if (guildId) {
+            guild =
+                fastify.dependencies.discordClient.guilds.cache.get(guildId);
+        }
 
         if (!guild) {
-            throw { statusCode: 400, message: "Bot is not in any guilds" };
+            throw {
+                statusCode: 400,
+                message: guildId
+                    ? `Guild ${guildId} not found`
+                    : "Bot is not in any guilds",
+            };
         }
 
         const channels = await guild.channels.fetch();
@@ -100,12 +118,31 @@ const getGuildChannels = async (
 };
 
 const createChannelHandlers = (fastify: FastifyInstance) => ({
-    setupMessageListener: async () => {
+    setupChannelsListener: async () => {
         const { discordClient, db } = fastify.dependencies;
 
-        discordClient?.on("channelCreate", async (channel: Channel) => {
-            const guild = discordClient?.guilds.cache.first();
+        discordClient.on("channelCreate", async (channel: Channel) => {
+            // Check if channel is part of a guild (not a DM channel)
+            if (!("guildId" in channel)) {
+                fastify.log.warn(
+                    {
+                        channelId: channel.id,
+                    },
+                    "Channel is not part of a authorized guild"
+                );
+
+                return;
+            }
+
+            const guild = discordClient.guilds.cache.get(channel.guildId);
             if (!guild) {
+                fastify.log.warn(
+                    {
+                        channelId: channel.id,
+                    },
+                    "Channel for authorized guild not found"
+                );
+
                 return;
             }
 
@@ -118,6 +155,7 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
                 if (isPublic) {
                     await db.insert(channelsSchema).values({
                         channelId: channel.id,
+                        guildId: guild.id,
                         createdAt: channel.createdAt,
                         name: channel.name,
                         isPublic,
@@ -130,35 +168,42 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
         });
     },
 
-    listGuildChannels: async (
-        request: FastifyRequest,
-        reply: FastifyReply
-    ): Promise<
-        ApiResponse<(GuildChannelResponse & { is_public: boolean })[]>
-    > => {
-        const channels = await getGuildChannels(fastify);
-
-        return {
-            status: 200,
-            data: channels,
-        };
-    },
-
     syncChannels: async (
-        request: FastifyRequest,
-        reply: FastifyReply
+        request: FastifyRequest
     ): Promise<ApiResponse<z.infer<typeof SyncChannelsResponseSchema>>> => {
         const { db } = fastify.dependencies;
-        fastify.log.info("starting sync channels");
-        const guildChannels = await getGuildChannels(fastify);
-        fastify.log.info("got guild channels", guildChannels.length);
+        const { guildId } = wrappedParse(
+            SyncChannelsRequestSchema,
+            request.query,
+            "sync_channels::query_params"
+        );
+
+        if (!guildId) {
+            return {
+                status: 400,
+                error: "guildId is required",
+            };
+        }
+
+        fastify.log.info(`Starting sync channels for guild ${guildId}`);
+        const guildChannels = await getGuildChannels(fastify, guildId);
+        fastify.log.info(
+            `Got guild channels for ${guildId}`,
+            guildChannels.length
+        );
+
         const dbChannels = await db
             .select({
                 channelId: channelsSchema.channelId,
             })
             .from(channelsSchema)
+            .where(eq(channelsSchema.guildId, guildId))
             .orderBy(channelsSchema.name);
-        fastify.log.info("select existing channels", dbChannels.length);
+
+        fastify.log.info(
+            `Selected existing channels for guild ${guildId}`,
+            dbChannels.length
+        );
 
         const newChannels = guildChannels.filter(
             (channel) =>
@@ -166,15 +211,20 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
                     (dbChannel) => dbChannel.channelId === channel.id
                 )
         );
-        fastify.log.info("new channels", newChannels.length);
 
-        let newChannelCount = 0;
+        fastify.log.info(
+            `New channels for guild ${guildId}`,
+            newChannels.length
+        );
+
+        let syncedChannelCount = 0;
         try {
             const newDbChannels = await db
                 .insert(channelsSchema)
                 .values(
                     newChannels.map((channel) => ({
                         channelId: channel.id,
+                        guildId,
                         name: channel.name,
                         isPublic: channel.is_public,
                         type: channel.type.toString().toLowerCase().trim(),
@@ -185,24 +235,29 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
                 )
                 .returning();
 
-            newChannelCount = newDbChannels.length;
-            fastify.log.info("inserted channels", newDbChannels.length);
+            syncedChannelCount = newDbChannels.length;
+            fastify.log.info(
+                `Inserted channels for guild ${guildId}`,
+                newDbChannels.length
+            );
         } catch (error) {
-            fastify.log.error(error, "Error inserting channels");
+            fastify.log.error(
+                error,
+                `Error inserting channels for guild ${guildId}`
+            );
             throw error;
         }
 
         return {
             status: 200,
             data: {
-                newChannelCount,
+                syncedChannelCount,
             },
         };
     },
 
     listChannels: async (
-        request: FastifyRequest,
-        reply: FastifyReply
+        request: FastifyRequest
     ): Promise<ApiResponse<z.infer<typeof ChannelsResponseSchema>>> => {
         const { db } = fastify.dependencies;
 
@@ -210,13 +265,14 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
             name,
             allowed,
             public: isPublic,
+            guildId,
         } = wrappedParse(
-            ListChannelsRequestQuerySchema,
+            ListChannelsWithGuildQuerySchema,
             request.query,
             "list_channels::query_params"
         );
 
-        const whereConditions = [];
+        const whereConditions = [eq(channelsSchema.guildId, guildId)];
         if (name) {
             whereConditions.push(ilike(channelsSchema.name, `%${name}%`));
         }
@@ -235,6 +291,7 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
         const channels = await db
             .select({
                 channelId: channelsSchema.channelId,
+                guildId: channelsSchema.guildId,
                 name: channelsSchema.name,
                 isPublic: channelsSchema.isPublic,
                 allowed: channelsSchema.allowed,
@@ -253,14 +310,19 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
     },
 
     listAllowedChannels: async (
-        request: FastifyRequest,
-        reply: FastifyReply
+        request: FastifyRequest
     ): Promise<ApiResponse<z.infer<typeof ChannelsResponseSchema>>> => {
         const { db } = fastify.dependencies;
+        const { guildId } = wrappedParse(
+            ListGuildChannelsRequestSchema,
+            request.query,
+            "list_allowed_channels::query_params"
+        );
 
         const channels = await db
             .select({
                 channelId: channelsSchema.channelId,
+                guildId: channelsSchema.guildId,
                 name: channelsSchema.name,
                 isPublic: channelsSchema.isPublic,
                 allowed: channelsSchema.allowed,
@@ -269,7 +331,12 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
                 parentId: channelsSchema.parentId,
             })
             .from(channelsSchema)
-            .where(eq(channelsSchema.allowed, true))
+            .where(
+                and(
+                    eq(channelsSchema.allowed, true),
+                    eq(channelsSchema.guildId, guildId)
+                )
+            )
             .orderBy(channelsSchema.name);
 
         return {
@@ -278,98 +345,50 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
         };
     },
 
-    // note: currently assumes we already have channel in the database after the sync operation
     addChannelToAllowlist: async (
-        request: FastifyRequest,
-        reply: FastifyReply
-    ): Promise<ApiResponse<z.infer<typeof ChannelsResponseSchema>>> => {
-        const { db, discordClient } = fastify.dependencies;
-        const { ids } = wrappedParse(
+        request: FastifyRequest
+    ): Promise<ApiResponse<void>> => {
+        const { db } = fastify.dependencies;
+
+        const { channelId, guildId } = wrappedParse(
             AddChannelToAllowlistRequestSchema,
             request.body,
             "add_channel_to_allowlist::body"
         );
 
-        fastify.log.info("trying to match channel ids", ids);
+        try {
+            await db
+                .update(channelsSchema)
+                .set({
+                    allowed: true,
+                    updatedAt: new Date(),
+                })
+                .where(
+                    and(
+                        eq(channelsSchema.channelId, channelId),
+                        eq(channelsSchema.guildId, guildId)
+                    )
+                );
 
-        const guild = discordClient?.guilds.cache.first();
-        if (!guild) {
             return {
-                status: 400,
-                error: "Bot is not in any guilds",
+                status: 200,
             };
+        } catch (error) {
+            fastify.log.error(
+                error,
+                `Failed to add channel ${channelId} to allowlist for guild ${guildId}`
+            );
+            throw error;
         }
-
-        const results: z.infer<typeof ChannelsResponseSchema> = [];
-        const channelIdsWithErrors: string[] = [];
-
-        // process each channel ID separately
-        for (const id of ids) {
-            try {
-                const channel = await db.query.channels.findFirst({
-                    where: eq(channelsSchema.channelId, id),
-                });
-
-                if (!channel) {
-                    fastify.log.error("channel not found", id);
-                    channelIdsWithErrors.push(id);
-                    continue;
-                }
-
-                if (channel?.allowed) {
-                    results.push(channel);
-                    continue;
-                }
-
-                if (!channel?.isPublic) {
-                    fastify.log.error("channel is not public", id);
-                    channelIdsWithErrors.push(id);
-                    continue;
-                }
-
-                const [updatedChannel] = await db
-                    .update(channelsSchema)
-                    .set({
-                        allowed: true,
-                    })
-                    .where(eq(channelsSchema.channelId, id))
-                    .returning();
-
-                results.push(updatedChannel);
-            } catch (error) {
-                fastify.log.error(`Error processing channel ${id}: ${error}`);
-                channelIdsWithErrors.push(id);
-            }
-        }
-
-        if (results.length === 0 && channelIdsWithErrors.length > 0) {
-            return {
-                status: 400,
-                error: `Failed to add channels: ${channelIdsWithErrors.join(
-                    ", "
-                )}`,
-            };
-        }
-
-        return {
-            status: 201,
-            data: results,
-            ...(channelIdsWithErrors.length > 0
-                ? {
-                      error: `Unprocessable channels: ${channelIdsWithErrors.join(
-                          ", "
-                      )}`,
-                  }
-                : {}),
-        };
     },
 
     removeChannelFromAllowlist: async (
         request: FastifyRequest,
         reply: FastifyReply
-    ): Promise<ApiResponse<{ message: string }>> => {
+    ): Promise<ApiResponse<void>> => {
         const { db } = fastify.dependencies;
-        const { ids } = wrappedParse(
+
+        const { channelId, guildId } = wrappedParse(
             RemoveChannelFromAllowlistRequestSchema,
             request.body,
             "remove_channel_from_allowlist::body"
@@ -378,18 +397,26 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
         try {
             await db
                 .update(channelsSchema)
-                .set({ allowed: false })
-                .where(inArray(channelsSchema.channelId, ids));
+                .set({
+                    allowed: false,
+                    updatedAt: new Date(),
+                })
+                .where(
+                    and(
+                        eq(channelsSchema.channelId, channelId),
+                        eq(channelsSchema.guildId, guildId)
+                    )
+                );
 
             return {
                 status: 200,
-                data: { message: "Channels removed from allowlist" },
             };
         } catch (error) {
-            return {
-                status: 500,
-                error: "Failed to remove channels from allowlist",
-            };
+            fastify.log.error(
+                error,
+                `Failed to remove channel ${channelId} from allowlist for guild ${guildId}`
+            );
+            throw error;
         }
     },
 });
@@ -399,6 +426,9 @@ const createChannelHandlers = (fastify: FastifyInstance) => ({
  */
 export const channelRoutes: FastifyPluginAsync = async (fastify) => {
     const handlers = createChannelHandlers(fastify);
+
+    // initialize channels listener when routes are registered
+    await handlers.setupChannelsListener();
 
     // GET /channels
     fastify.get("/channels", {
@@ -422,24 +452,12 @@ export const channelRoutes: FastifyPluginAsync = async (fastify) => {
         handler: wrappedHandler(fastify)(handlers.listAllowedChannels),
     });
 
-    // GET /channels/guild
-    fastify.get("/channels/guild", {
-        preHandler: validateApiKey,
-        schema: {
-            response: {
-                201: ApiResponseSchema(ChannelsResponseSchema),
-                400: ErrorResponseSchema,
-            },
-        },
-        handler: wrappedHandler(fastify)(handlers.listGuildChannels),
-    });
-
     // POST /channels/sync
     fastify.post("/channels/sync", {
         preHandler: validateApiKey,
         schema: {
             response: {
-                201: ApiResponseSchema(ChannelResponseSchema),
+                201: ApiResponseSchema(SyncChannelsResponseSchema),
                 400: ErrorResponseSchema,
                 404: ErrorResponseSchema,
                 500: ErrorResponseSchema,

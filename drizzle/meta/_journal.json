@@ -5,43 +5,8 @@
     {
       "idx": 0,
       "version": "5",
-      "when": 1740361053306,
-      "tag": "0000_friendly_sue_storm",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "5",
-      "when": 1740362474206,
-      "tag": "0001_soft_raza",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "5",
-      "when": 1740372781821,
-      "tag": "0002_third_changeling",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "5",
-      "when": 1740373249867,
-      "tag": "0003_icy_grandmaster",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "5",
-      "when": 1740539461536,
-      "tag": "0004_flaky_retro_girl",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "5",
-      "when": 1740612653666,
-      "tag": "0005_sleepy_mystique",
+      "when": 1743619917095,
+      "tag": "0000_aspiring_mentallo",
       "breakpoints": true
     }
   ]

@@ -6,18 +6,28 @@ import { db } from "../../../db";
 import { messages as messagesSchema } from "../../../schema/messages";
 import { Nullish } from "../../../types/index";
 
-export const mapMessageToRecordSchema = (message: Message) => ({
-    messageId: message.id,
-    guildId: message.guildId,
-    channelId: message.channelId,
-    createdAt: message.createdAt,
-    content: message.cleanContent,
-    threadId: message.thread?.id ?? null,
-    threadParentChannelId: message.thread?.parentId ?? null,
-    replyTo: message.reference?.messageId,
-    author: message.author.toJSON(),
-    raw: message.toJSON(),
-});
+export const mapMessageToRecordSchema = (message: Message) => {
+    // Ensure we have a guildId - required by schema
+    let guildId = message.guildId;
+
+    // If guildId is null, try to get it from other sources
+    if (!guildId) {
+        guildId = message.guild?.id || "unknown";
+    }
+
+    return {
+        messageId: message.id,
+        guildId,
+        channelId: message.channelId,
+        createdAt: message.createdAt,
+        content: message.cleanContent,
+        threadId: message.thread?.id ?? null,
+        threadParentChannelId: message.thread?.parentId ?? null,
+        replyTo: message.reference?.messageId,
+        author: message.author.toJSON(),
+        raw: message.toJSON(),
+    };
+};
 
 const handleMessages = async (
     messages: Array<Message>,

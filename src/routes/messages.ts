@@ -124,6 +124,7 @@ const MessagesResponseSchema = z.object({
  * - fetch historical messages from a thread
  */
 const IndexMessagesRequestSchema = z.object({
+    guildId: z.string().describe("Guild ID to index messages from"),
     channelId: z.string().describe("Channel ID to index messages from"),
     threadId: z
         .string()
@@ -147,7 +148,7 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
         const { discordClient, db } = fastify.dependencies;
 
         // https://discord.js.org/docs/packages/discord.js/14.18.0/Client:Class#messageCreate
-        discordClient?.on("messageCreate", async (message: Message) => {
+        discordClient.on("messageCreate", async (message: Message) => {
             // sample incoming events at a rate of 25%
             if (Math.random() < 0.25) {
                 fastify.log.debug(
@@ -165,6 +166,7 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
 
             const allowedChannel = await db.query.channels.findFirst({
                 where: and(
+                    eq(channelsSchema.guildId, message.guildId),
                     eq(channelsSchema.channelId, message.channelId),
                     eq(channelsSchema.allowed, true)
                 ),
@@ -197,7 +199,7 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
         });
 
         // https://discord.js.org/docs/packages/discord.js/14.18.0/Client:Class#messageDelete
-        discordClient?.on(
+        discordClient.on(
             "messageDelete",
             async (message: Message | PartialMessage) => {
                 fastify.log.debug(
@@ -219,14 +221,19 @@ const createMessagesHandlers = (fastify: FastifyInstance) => ({
         reply: FastifyReply
     ): Promise<ApiResponse<{ processed: number }>> => {
         const { discordClient, db } = fastify.dependencies;
-        const { channelId, threadId, threads, before, maxRetries } =
+        const { guildId, channelId, threadId, threads, before, maxRetries } =
             wrappedParse(
                 IndexMessagesRequestSchema,
                 request.body,
                 "index_messages::body"
             );
 
-        const channel = await discordClient?.channels.fetch(channelId);
+        const guildClient = discordClient.guilds.cache.get(guildId);
+        if (!guildClient) {
+            throw new Error(`Guild ${guildId} not found`);
+        }
+
+        const channel = await guildClient.channels.fetch(channelId);
         if (!channel) {
             throw new Error(`Channel ${channelId} not found`);
         }
