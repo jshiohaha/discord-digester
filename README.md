@@ -386,3 +386,11 @@ docker run -p 3000:3000 \
     -e LOG_LEVEL=<LOG_LEVEL> \
     discord-digester
 ```
+
+## License
+
+Discord Digester is licensed under [Apache 2.0](./LICENSE).
+
+Unless you explicitly state otherwise, any contribution intentionally submitted
+for inclusion in Discord Digester by you, as defined in the Apache-2.0 license, shall be
+licensed as above, without any additional terms or conditions.
