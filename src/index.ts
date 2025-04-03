@@ -14,6 +14,7 @@ import {
 } from "fastify-type-provider-zod";
 import { z } from "zod";
 
+import { DateTime } from "luxon";
 import { client, connectDB, db, disconnectDB } from "./db";
 import { EnvConfig } from "./env";
 import { channelRoutes } from "./routes/channels";
@@ -145,11 +146,16 @@ const start = async () => {
                         createdAt: guild.createdAt,
                         name: guild.name,
                         iconUrl: guild.iconURL(),
-                        active: true,
                         raw: guild.toJSON(),
+                        active: true,
+                        addedAt: DateTime.now().toJSDate(),
                     })
-                    .onConflictDoNothing({
+                    .onConflictDoUpdate({
                         target: guilds.guildId,
+                        set: {
+                            active: true,
+                            addedAt: DateTime.now().toJSDate(),
+                        },
                     })
                     .returning()
                     .then((guilds) => {
