@@ -5,6 +5,7 @@ config();
 import fastifyCookie from "@fastify/cookie";
 import fastifySession from "@fastify/session";
 import { Client, GatewayIntentBits, Guild } from "discord.js";
+import { eq } from "drizzle-orm";
 import Fastify from "fastify";
 import {
     hasZodFastifySchemaValidationErrors,
@@ -160,6 +161,35 @@ const start = async () => {
                     .catch((error) => {
                         fastify.log.error(error, "Failed to join guild");
                     });
+            });
+
+            discordClient.on("guildDelete", async (guild: Guild) => {
+                try {
+                    const result = await fastify.dependencies.db
+                        .update(guilds)
+                        .set({
+                            active: false,
+                        })
+                        .where(eq(guilds.guildId, guild.id))
+                        .returning();
+
+                    if (result.length > 0) {
+                        fastify.log.info(
+                            { guildId: guild.id, name: guild.name },
+                            "Bot removed from guild"
+                        );
+                    } else {
+                        fastify.log.warn(
+                            { guildId: guild.id },
+                            "Attempted to mark guild as inactive but guild not found in database"
+                        );
+                    }
+                } catch (error) {
+                    fastify.log.error(
+                        { guildId: guild.id, error },
+                        "Failed to mark guild as inactive"
+                    );
+                }
             });
 
             try {
