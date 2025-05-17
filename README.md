@@ -1,350 +1,121 @@
 <div align="center">
   </br>
   <p>
-    <img height="300" src="./assets/cover.jpg" />
+    <img height="300" src="./assets/cover.png" />
   </p>
   <p>
     <strong>discord digester</strong>
   </p>
 </div>
 
-📹 Metadao hackathon demo [here](https://drive.google.com/file/d/1FhhMiLyX0gQEitR9TU9PpHvdE__zQYsk/view).
-
 # Motivation
 
-Futarchic markets are prediction markets used for governance decisions, where participants trade on the outcomes of different policy choices. These markets help organizations make better decisions by aggregating collective knowledge and creating financial incentives for accurate predictions.
+Discord communities generate a wealth of discussions, decisions, and feedback, but that valuable information often remains locked in chat logs, making it hard to search, analyze, and integrate with other systems. Discord Digester helps teams, researchers, and community managers unlock these insights by capturing and organizing messages at scale.
 
-Having comprehensive, well-organized information is crucial for futarchic markets because:
+Having comprehensive, well-organized conversation data is crucial because:
 
--   Traders need historical context and data to make informed predictions
--   Market efficiency depends on participants having access to relevant information
--   Complex governance decisions require understanding multiple interconnected factors
--   Information asymmetry can lead to market inefficiencies and poor outcomes
+-   Teams need historical context to inform product roadmaps and feature prioritization.
+-   Organizations gain deeper customer insights by analyzing sentiment trends and recurring topics.
+-   Community managers can monitor health metrics, detect emerging issues, and surface key discussions.
+-   Researchers and data scientists can build dashboards, reports, and machine learning models to drive data-driven decisions.
 
-## What can be built with this data?
+## What can you build with this data?
 
-Metadao's Discord content can power various tools to enhance futarchic markets. Natural language processing can generate automated market summaries and highlight key discussion points. Historical analysis tools can track sentiment trends and correlate them with market outcomes. AI-powered research assistants can help traders quickly find relevant historical discussions and market precedents. Real-time analytics can detect emerging topics and potential market-moving discussions, enabling more informed trading decisions. This data infrastructure also enables the development of educational tools that help new participants understand market dynamics through concrete examples from past governance decisions.
+-   **Automated summaries & reports:** Generate concise recaps of long discussions or weekly highlights.
+-   **Sentiment & topic analysis:** Track how user sentiment and subject matter evolve over time.
+-   **AI-powered assistants:** Build chatbots that answer questions based on historical conversations.
+-   **Real-time alerts:** Notify your team of trending keywords or spikes in activity.
+-   **Knowledge bases & FAQs:** Populate documentation or support articles from past community Q\&A.
 
 # Problem
 
-Today, conversations and context is locked away in Discord. Channels are public, but it's cumbersome to search through them to find the information you need. It's also impossible to leverage sophisticated tools like LLMs to analyze the data.
+Today, valuable conversation history is locked away in Discord. While channels are public, it’s cumbersome to search through threads or leverage advanced analytics tools on raw chat logs. This limits your ability to derive actionable insights and integrate community feedback into your workflows.
 
 # Solution
 
-Discord Digester is a tool that extracts, stores, and makes Discord content easily accessible and analyzable. It systematically captures messages from specific channels and allows you to easily query them.
+Discord Digester extracts, stores, and makes Discord content easily accessible and analyzable. It systematically captures messages from specific channels and provides a simple API for querying and analyzing the data.
 
 ### Features
 
--   Sync public discord channels to a postgres database. Restricted channels, like [#cyberlounge](https://discord.com/channels/1155877543174475859/1155877543874932868) are currently not accessible by the bot.
--   Add and remove channels from an allowlist that dictates which messages are synced
--   Backfill messages from allowed channels
--   Get messages from a channel
+-   **Sync public Discord channels** to a PostgreSQL database (private or role-restricted channels are not accessible).
+-   **Manage an allowlist** of channels to control which conversations are ingested.
+-   **Backfill historical messages** to capture past context.
+-   **Query messages** by channel, date range, author, or keyword.
 
 # Stats
 
-Check out this [README](./stats/README.md) for some stats on the data that Discord Digester has collected.
+Explore some [data insights](./stats/README.md) powered by Discord Digester’s collected messages.
 
 # API Reference
 
-📣 If you just want to get rolling and dive deeper later, here are a few helpful endpoints:
+If you’d like to dive in right away, here are a few key endpoints:
 
--   Get indexed channels, from which you can get historical messages (as shown below)
+-   **List allowed channels**
 
-    > 🔗 https://discord-digester-production.up.railway.app/api/v1/channels/allowed
+    ```
+    GET /api/v1/channels/allowed
+    ```
 
--   return the last 10 messages from propsosal 3
+    Returns channels configured for message syncing.
 
-    > 🔗 https://discord-digester-production.up.railway.app/api/v1/messages/1199177850109046868?limit=10&sort=desc
+-   **Get messages from a channel**
 
-The Discord Digester API provides several endpoints to manage channels and retrieve messages. Some endpoints require API key authentication, which should be provided in the request headers.
+    ```
+    GET /api/v1/messages/:channelId?limit=10&sort=desc
+    ```
 
-The API is currently hosted on railway and is available at `https://discord-digester-production.up.railway.app`.
+    Retrieves the most recent messages from an allowed channel.
 
-🛠️ I use an API client called [Yaak](https://yaak.app) to test APIs. I exported my workspace configuration [here](./.yaak/yaak.discord-digester.json). If you want to quickly get started with the API, you can import it into Yaak to get started. Make sure your environment is set to production, unless you have the service running locally.
-
-## Authentication
-
-Protected endpoints require an API key to be included in the request headers:
+All protected endpoints require an API key in the header:
 
 ```
 Authorization: Bearer <YOUR_API_KEY>
 ```
 
-## Messages
-
-### Get Messages from Channel
-
-📔 This is the main endpoint that API consumers will likely care about. It allows users to retrieve messages from a specific allowlisted channel.
+The API is hosted at:
 
 ```
-GET /api/v1/messages/:channelId
+https://discord-digester-production.up.railway.app
 ```
 
-Retrieves messages from a specific channel. To see the channels that are in the allowlist, use the `GET /api/v1/channels/allowed` endpoint.
+For a quick-start, import the provided Yaak configuration at `./.yaak/yaak.discord-digester.json` into your API client.
 
-The query parameters allow you to filter the messages by date and limit the number of messages returned. If you want to fetch increasingly older messages from channel, you can keep updating the `before` parameter with the ID of the last message you received.
+## Authentication
 
-**Path Parameters:**
-
--   `channelId`: ID of the channel to retrieve messages from
-
-**Query Parameters:**
-
--   `before` (optional): Filter messages before this time point. Accepts either:
-    -   Epoch timestamp (milliseconds since Unix epoch)
-    -   ISO 8601 date string (e.g., "2023-04-15T14:30:00Z")
--   `after` (optional): Filter messages after this time point. Accepts either:
-    -   Epoch timestamp (milliseconds since Unix epoch)
-    -   ISO 8601 date string (e.g., "2023-04-15T14:30:00Z")
--   `limit` (optional): Maximum number of messages to return (default: 100)
--   `sort` (optional): Sort direction, either "asc" or "desc" (default: "desc")
-
-**Authentication:** Not required
-
-**Response:**
-
-```json
-{
-    "status": 200,
-    "data": {
-        "messages": [
-            {
-                "messageId": "123456789012345678",
-                "channelId": "123456789012345678",
-                "content": "Hello world!",
-                "createdAt": "2023-01-01T00:00:00.000Z",
-                "authorId": "123456789012345678",
-                "authorUsername": "user123"
-            }
-        ]
-    }
-}
-```
-
-### Backfill Messages
+Include your API key in requests to protected endpoints:
 
 ```
-POST /api/v1/messages/backfill
+Authorization: Bearer <YOUR_API_KEY>
 ```
 
-Backfills historical messages from a specified channel or thread.
+## Endpoints Overview
 
-**Authentication:** API key required
+### Messages
 
-**Request Body:**
+-   **GET /api/v1/messages/\*\*\*\*:channelId**
 
-```json
-{
-    "channelId": "123456789012345678",
-    "threadId": "987654321098765432", // Optional
-    "threads": ["active", "archived"], // Optional, default: ["active", "archived"]
-    "maxRetries": 3, // Optional, default: 3
-    "before": "123456789012345678" // Optional, message ID to get messages before
-}
-```
+    -   **Query Parameters:**
 
-**Response:**
+        -   `before` / `after` (timestamp or ISO 8601)
+        -   `limit` (default: 100)
+        -   `sort` (`asc` or `desc`, default: `desc`)
 
-```json
-{
-    "status": 200
-}
-```
+-   **POST /api/v1/messages/backfill** (API key required)
 
-## Channels
+    -   Backfills historical messages for a channel/thread.
 
-### List Allowed Channels
+### Channels
 
-```
-GET /api/v1/channels/allowed
-```
+-   **GET /api/v1/channels/allowed**
+-   **GET /api/v1/channels** (all synced channels)
+-   **GET /api/v1/channels/guild** (requires API key)
+-   **POST /api/v1/channels/sync** (requires API key)
+-   **POST /api/v1/channels/allowed** (add to allowlist)
+-   **DELETE /api/v1/channels/allowed** (remove from allowlist)
 
-Returns a list of channels that are on the allowlist for message syncing.
+### Health Check
 
-**Authentication:** Not required
-
-**Response:**
-
-```json
-{
-    "status": 200,
-    "data": [
-        {
-            "channelId": "123456789012345678",
-            "name": "general",
-            "updatedAt": "2023-01-01T00:00:00.000Z",
-            "isPublic": true,
-            "allowed": true,
-            "type": "text",
-            "parentId": null
-        }
-    ]
-}
-```
-
-### List All Channels
-
-```
-GET /api/v1/channels
-```
-
-Returns a list of all channels that have been synced to the database.
-
-**Query Parameters:**
-
--   `name` (optional): Filter channels by name (case-insensitive, partial match)
-
-**Authentication:** Not required
-
-**Response:**
-
-```json
-{
-    "status": 200,
-    "data": [
-        {
-            "channelId": "123456789012345678",
-            "name": "general",
-            "updatedAt": "2023-01-01T00:00:00.000Z",
-            "isPublic": true,
-            "allowed": true,
-            "type": "text",
-            "parentId": null
-        }
-    ]
-}
-```
-
-### List Guild Channels
-
-```
-GET /api/v1/channels/guild
-```
-
-Returns a list of all channels in the Discord guild that the bot has access to.
-
-**Authentication:** API key required
-
-**Response:**
-
-```json
-{
-    "status": 200,
-    "data": [
-        {
-            "id": "123456789012345678",
-            "name": "general",
-            "type": "GUILD_TEXT",
-            "is_public": true
-        }
-    ]
-}
-```
-
-### Sync Channels
-
-```
-POST /api/v1/channels/sync
-```
-
-Syncs all channels from the Discord guild to the database.
-
-**Authentication:** API key required
-
-**Response:**
-
-```json
-{
-    "status": 200,
-    "data": {
-        "newChannelCount": 5
-    }
-}
-```
-
-### Add Channels to Allowlist
-
-```
-POST /api/v1/channels/allowed
-```
-
-Adds specified channels to the allowlist for message syncing.
-
-**Authentication:** API key required
-
-**Request Body:**
-
-```json
-{
-    "ids": ["123456789012345678", "987654321098765432"]
-}
-```
-
-**Response:**
-
-```json
-{
-    "status": 201,
-    "data": [
-        {
-            "channelId": "123456789012345678",
-            "name": "general",
-            "updatedAt": "2023-01-01T00:00:00.000Z",
-            "isPublic": true,
-            "allowed": true,
-            "type": "text",
-            "parentId": null
-        }
-    ]
-}
-```
-
-### Remove Channels from Allowlist
-
-```
-DELETE /api/v1/channels/allowed
-```
-
-Removes specified channels from the allowlist.
-
-**Authentication:** API key required
-
-**Request Body:**
-
-```json
-{
-    "ids": ["123456789012345678"]
-}
-```
-
-**Response:**
-
-```json
-{
-    "status": 200,
-    "data": {
-        "message": "Channels removed from allowlist"
-    }
-}
-```
-
-## Health Check
-
-```
-GET /health
-```
-
-Simple health check endpoint to verify the API is running. This endpoint is used during the deployment process to ensure the API is up and running.
-
-**Authentication:** Not required
-
-**Response:**
-
-```json
-{
-    "status": "ok"
-}
-```
+-   **GET /health** — Verify the service is running.
 
 # Getting Started
 
@@ -356,13 +127,13 @@ npm install
 
 ### Building the project
 
-Without Docker:
+**Without Docker:**
 
 ```bash
 npm run build
 ```
 
-With Docker:
+**With Docker:**
 
 ```bash
 docker build -t discord-digester .
@@ -370,13 +141,13 @@ docker build -t discord-digester .
 
 ### Running the server
 
-Without Docker:
+**Without Docker:**
 
 ```bash
 npm run dev
 ```
 
-With Docker:
+**With Docker:**
 
 ```bash
 docker run -p 3000:3000 \
@@ -391,6 +162,4 @@ docker run -p 3000:3000 \
 
 Discord Digester is licensed under [Apache 2.0](./LICENSE).
 
-Unless you explicitly state otherwise, any contribution intentionally submitted
-for inclusion in Discord Digester by you, as defined in the Apache-2.0 license, shall be
-licensed as above, without any additional terms or conditions.
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in Discord Digester by you, as defined in the Apache-2.0 license, shall be licensed as above, without any additional terms or conditions.
